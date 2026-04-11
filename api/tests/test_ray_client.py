@@ -118,6 +118,48 @@ def test_init_passes_address_to_factory() -> None:
     ray_client.reset()
 
 
+def test_default_factory_builds_real_ray_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    When no factory override is installed, init() must fall back to the
+    real ``ray.job_submission.JobSubmissionClient``.
+
+    We can't install the real Ray package in the test venv (too heavy),
+    so we inject a stub ``ray.job_submission`` module into ``sys.modules``
+    that provides a fake JobSubmissionClient. That forces ``_default_factory``
+    through its import line without actually talking to Ray.
+    """
+    import sys
+    import types
+
+    from src import ray_client  # noqa: PLC0415
+
+    built: list[str] = []
+
+    class _StubJobSubmissionClient:
+        def __init__(self, address: str) -> None:
+            built.append(address)
+            self.address = address
+
+    # Build a synthetic ``ray.job_submission`` module in sys.modules so
+    # the ``from ray.job_submission import JobSubmissionClient`` line
+    # inside _default_factory resolves to our stub. Also stub the
+    # parent ``ray`` package to satisfy Python's import machinery.
+    stub_parent = types.ModuleType("ray")
+    stub_child = types.ModuleType("ray.job_submission")
+    stub_child.JobSubmissionClient = _StubJobSubmissionClient  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "ray", stub_parent)
+    monkeypatch.setitem(sys.modules, "ray.job_submission", stub_child)
+
+    ray_client.reset()  # no factory override — will hit _default_factory
+    ray_client.init("http://ray-head:8265")
+
+    assert built == ["http://ray-head:8265"]
+    # Clean up the singleton for the next test
+    ray_client.reset()
+
+
 # ─── ping() ─────────────────────────────────────────────────────────
 async def test_ping_calls_list_jobs_once(fake_ray: FakeRayClient) -> None:
     from src import ray_client  # noqa: PLC0415
