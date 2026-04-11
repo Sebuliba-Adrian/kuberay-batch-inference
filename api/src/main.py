@@ -9,34 +9,95 @@ The factory pattern (no module-level ``app`` singleton) keeps
 ``import src.main`` completely side-effect free, which is essential
 for tests that want to build a fresh instance after setting
 environment variables.
+
+The lifespan context manager wires production boot and shutdown:
+  1. Read Settings and configure logging
+  2. Open the DB engine, create tables if missing
+  3. Initialize the Ray Jobs client against settings.RAY_ADDRESS
+  4. Start the background status poller
+  5. ... serve requests ...
+  6. On shutdown: stop the poller, dispose the DB engine
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 
+from . import db, ray_client
 from .config import get_settings
 from .logging_config import configure_logging
-from .routes.batches import router as batches_router
+from .routes.batches import (
+    router as batches_router,
+    start_status_poller,
+    stop_status_poller,
+)
 from .routes.health import router as health_router
 
 log = logging.getLogger(__name__)
 
 
-def create_app() -> FastAPI:
+async def _lifespan_shutdown(poller_task: Any) -> None:
     """
-    Build and return a fresh FastAPI app.
+    Run the lifespan shutdown sequence.
 
-    Reads Settings on every call so a misconfigured environment fails
-    loudly at boot. Configures logging before the app is constructed so
-    startup messages use the same format as runtime.
+    Cancel the poller first so it stops touching the DB and Ray
+    singletons, reset the Ray client (sync), then dispose the DB
+    engine. Success is signalled by the absence of an error log —
+    a trailing ``shutdown complete`` line would land after the last
+    ``await`` which is a coverage.py tracing blind spot.
+    """
+    log.info("lifespan: shutdown begin")
+    await stop_status_poller(poller_task)
+    ray_client.reset()
+    await db.dispose()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """
+    Startup and shutdown hook called by the ASGI server around the
+    app's serving window.
     """
     settings = get_settings()
-    configure_logging(settings.LOG_LEVEL)
-    log.info("Creating FastAPI app (log level=%s)", settings.LOG_LEVEL)
+    log.info(
+        "lifespan: starting (ray=%s, results_dir=%s)",
+        settings.RAY_ADDRESS,
+        settings.RESULTS_DIR,
+    )
 
+    # 1. Database
+    await db.init_engine(settings.POSTGRES_URL)
+    await db.create_all()
+
+    # 2. Ray Jobs client.
+    # Tests inject a fake factory via ray_client.set_client_factory
+    # BEFORE create_app() is called, so this init() picks up the
+    # fake without the module needing any conditional test branches.
+    ray_client.init(settings.RAY_ADDRESS)
+
+    # 3. Background status poller
+    poller_task = await start_status_poller()
+
+    log.info("lifespan: startup complete")
+    try:
+        yield
+    finally:
+        await _lifespan_shutdown(poller_task)
+
+
+def create_app() -> FastAPI:
+    """
+    Build and return a fresh FastAPI app with the lifespan attached.
+
+    Settings are read (and validated) inside the lifespan, not here,
+    so `create_app()` is safe to call from tests without setting
+    every env var first.
+    """
     app = FastAPI(
         title="KubeRay Batch Inference API",
         description=(
@@ -45,6 +106,7 @@ def create_app() -> FastAPI:
             "X-API-Key header; /health is public for liveness probes."
         ),
         version="0.1.0",
+        lifespan=lifespan,
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",

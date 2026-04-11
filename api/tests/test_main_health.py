@@ -23,14 +23,12 @@ from httpx import ASGITransport, AsyncClient
 
 
 # ─── create_app ─────────────────────────────────────────────────────
-def test_create_app_returns_fastapi_instance(
-    monkeypatch: pytest.MonkeyPatch, api_key: str
-) -> None:
+def test_create_app_returns_fastapi_instance() -> None:
     """create_app() returns a FastAPI app with title and version set."""
-    monkeypatch.setenv("API_KEY", api_key)
-
     from src.main import create_app
 
+    # Note: no API_KEY required here — settings are now read lazily
+    # inside the lifespan, so the factory itself is pure.
     app = create_app()
     assert isinstance(app, FastAPI)
     assert app.title == "KubeRay Batch Inference API"
@@ -50,16 +48,29 @@ def test_create_app_is_side_effect_free_at_import(
     # If importing triggered Settings() it would have already raised.
 
 
-def test_create_app_raises_when_api_key_missing(
+def test_create_app_deferred_settings_raise_inside_lifespan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """create_app() pulls Settings, so missing API_KEY fails loudly."""
+    """
+    Missing API_KEY must still fail loudly — but only when the lifespan
+    actually runs, not when the factory is called. This is a deliberate
+    design choice so test fixtures can build an app, inject fakes, then
+    enter the lifespan inside the test body.
+    """
     from pydantic import ValidationError
 
-    from src.main import create_app
+    from src.main import create_app, lifespan
+
+    app = create_app()  # factory is pure — no raise
+
+    async def _enter_lifespan() -> None:
+        async with lifespan(app):
+            pass
+
+    import asyncio
 
     with pytest.raises(ValidationError):
-        create_app()
+        asyncio.run(_enter_lifespan())
 
 
 # ─── /health route ──────────────────────────────────────────────────
