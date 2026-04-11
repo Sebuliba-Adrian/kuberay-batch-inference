@@ -1,0 +1,55 @@
+# Database schema bootstrap.
+#
+# Postgres docker-entrypoint.sh runs every *.sql in /docker-entrypoint-initdb.d/
+# on first container start — so mounting this ConfigMap there is enough to
+# create the schema without Alembic for a take-home demo.
+#
+# A production service would run migrations explicitly via Alembic + an
+# init container so schema evolution is versioned and reversible.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: ray
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: kuberay-batch-inference
+data:
+  01-schema.sql: |
+    -- One row per batch submission. Mirrors OpenAI's Batch object loosely.
+    -- Result payloads live on the shared PVC, not here.
+    CREATE TABLE IF NOT EXISTS batches (
+        id               VARCHAR(64)  PRIMARY KEY,
+        status           VARCHAR(32)  NOT NULL,
+        model            VARCHAR(128) NOT NULL,
+        ray_job_id       VARCHAR(128),
+        input_count      INTEGER      NOT NULL DEFAULT 0,
+        completed_count  INTEGER      NOT NULL DEFAULT 0,
+        failed_count     INTEGER      NOT NULL DEFAULT 0,
+        max_tokens       INTEGER      NOT NULL DEFAULT 256,
+        error            TEXT,
+        input_path       VARCHAR(512),
+        results_path     VARCHAR(512),
+        created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+        updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+        completed_at     TIMESTAMPTZ
+    );
+
+    -- Secondary index for the most common query: "what's in-flight?"
+    CREATE INDEX IF NOT EXISTS idx_batches_status ON batches (status);
+
+    -- Time-range index for ops / audit queries
+    CREATE INDEX IF NOT EXISTS idx_batches_created_at ON batches (created_at DESC);
+
+    -- Auto-update updated_at on row changes
+    CREATE OR REPLACE FUNCTION touch_updated_at() RETURNS trigger AS $$
+    BEGIN
+        NEW.updated_at = now();
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    DROP TRIGGER IF EXISTS batches_touch_updated_at ON batches;
+    CREATE TRIGGER batches_touch_updated_at
+    BEFORE UPDATE ON batches
+    FOR EACH ROW EXECUTE FUNCTION touch_updated_at();

@@ -1,0 +1,79 @@
+# Postgres deployment for batch metadata.
+#
+# Single-replica StatefulSet would be the better shape for a production
+# database, but kind's storage limitations make a Deployment + PVC
+# simpler here and functionally equivalent for a demo.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: ray
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: kuberay-batch-inference
+spec:
+  replicas: 1
+  strategy:
+    # Recreate avoids two pods briefly both mounting the RWO PVC during
+    # a rolling update — kind's local-path provisioner does not support
+    # simultaneous mounts.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/part-of: kuberay-batch-inference
+    spec:
+      securityContext:
+        # Postgres official image runs as UID 999 (the `postgres` user).
+        # fsGroup lets that user write the PVC without a chown initContainer.
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: postgres-credentials
+          env:
+            # PGDATA must NOT be the mount root; see postgres image docs
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "batches", "-d", "batches"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "batches", "-d", "batches"]
+            initialDelaySeconds: 30
+            periodSeconds: 15
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+        - name: init
+          configMap:
+            name: postgres-init

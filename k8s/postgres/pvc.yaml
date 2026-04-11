@@ -1,0 +1,18 @@
+# Postgres storage. Small; job metadata only, not result payloads.
+# Uses kind's default standard StorageClass (ReadWriteOnce, sufficient
+# for a single Postgres pod).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: ray
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: kuberay-batch-inference
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: "standard"

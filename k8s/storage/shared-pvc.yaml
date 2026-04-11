@@ -1,0 +1,59 @@
+# Shared storage for batch inputs and results.
+#
+# Architecture: both the FastAPI pod (which writes inputs and reads results)
+# and the Ray worker pods (which read inputs and write results) need
+# read/write access to the SAME directory. That requires ReadWriteMany (RWX)
+# semantics. kind's default `standard` StorageClass is hostPath-based and
+# supports RWO only.
+#
+# Workaround: we define an explicit PersistentVolume backed by a hostPath
+# that is mounted into the kind node via `extraMounts` in kind-config.yaml.
+# hostPath PVs support RWX because the "storage" is simply a directory on
+# the node — multiple pods on the same node can mount it simultaneously.
+#
+# Since the kind cluster has only one node, all pods land there, so
+# multi-pod access works cleanly.
+#
+# Production upgrade path: swap for an EFS / Azure Files / GCE Filestore
+# CSI driver that natively supports RWX, or for cloud object storage
+# (S3 / MinIO) with a presigned-URL API shape instead of file reads.
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: batches-pv
+  labels:
+    app.kubernetes.io/name: batches-storage
+    app.kubernetes.io/part-of: kuberay-batch-inference
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  # Bind directly to the PVC by claimRef so the k8s scheduler doesn't
+  # accidentally match this PV to an unrelated claim.
+  claimRef:
+    namespace: ray
+    name: batches-pvc
+  storageClassName: "manual"
+  hostPath:
+    path: /mnt/data
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: batches-pvc
+  namespace: ray
+  labels:
+    app.kubernetes.io/name: batches-storage
+    app.kubernetes.io/part-of: kuberay-batch-inference
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: "manual"
+  volumeName: batches-pv

@@ -1,0 +1,58 @@
+# KubeRay operator Helm chart values.
+#
+# Intentionally minimal. The operator has safe defaults for resource limits
+# and leader election; we only override what matters for this demo:
+#
+#   - image pin (via chart version in the Makefile, not here)
+#   - resource requests sized for a laptop
+#   - watch scope restricted to the 'ray' namespace so it doesn't fight
+#     with anything else on a shared dev cluster
+#
+# Applied via:
+#   helm upgrade --install kuberay-operator kuberay/kuberay-operator \
+#     --version 1.6.0 -n kuberay-system --create-namespace \
+#     -f k8s/kuberay/values.yaml
+#
+# Reference:
+#   https://github.com/ray-project/kuberay/blob/master/helm-chart/kuberay-operator/values.yaml
+
+# ─── Operator pod sizing ─────────────────────────────────────────────
+# Chart default is a single replica; for a local demo that is fine.
+# A production deployment would set replicas: 2 + leader election.
+replicaCount: 1
+
+# Conservative resource envelope for the operator pod itself. The operator
+# is a controller-loop, not a data-plane component — these numbers are
+# independent of the Ray workloads it manages.
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+# ─── Watch scope ─────────────────────────────────────────────────────
+# Omitted: the operator watches all namespaces by default, which is what
+# we want for this repo — the RayCluster lives in 'ray' and the operator
+# lives in 'kuberay-system'.
+#
+# To restrict to a single namespace in a multi-tenant shared cluster:
+# singleNamespaceInstall: true
+# watchNamespace: "ray"
+
+# ─── CRDs ────────────────────────────────────────────────────────────
+# The chart installs CRDs by default (ray.io/v1 RayCluster, RayJob,
+# RayService). Leave enabled.
+crd:
+  create: true
+
+# ─── Logging ─────────────────────────────────────────────────────────
+# `info` is the useful default; flip to `debug` when chasing a
+# reconciliation bug.
+logging:
+  stdoutEncoder: "console"
+  fileEncoder: "json"
+  baseDir: "/tmp/ray-operator-logs"
+  fileLogLevel: "info"
+  stdoutLogLevel: "info"
