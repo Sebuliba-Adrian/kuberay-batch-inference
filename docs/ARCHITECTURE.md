@@ -24,23 +24,29 @@ A three-tier offline batch-inference service:
          │  │ PostgreSQL  │         │     RayCluster        │         │
          │  │ (job meta)  │         │                       │         │
          │  └──────▲──────┘         │  ┌────┐ ┌────────────┐│         │
-         │         │                │  │Head│ │Workers × 2 ││         │
-         │    SQLAlchemy 2.0        │  │8265│ │Ray Data    ││         │
-         │    (asyncpg)             │  └────┘ │+Transformers│         │
-         │         │                │         │+Qwen2.5-0.5B│         │
-         │  ┌──────┴──────┐         │         └──────┬──────┘│         │
-  curl  ─┼─►│  FastAPI    │────────►│                │       │         │
-  :8000  │  │  proxy      │Jobs API │                │       │         │
-  X-API  │  │             │(:8265)  │                │       │         │
-         │  └──────┬──────┘         └────────────────┼───────┘         │
-         │         │                                 │                 │
-         │         ▼                                 ▼                 │
-         │  ┌──────────────── Shared PVC (hostPath) ────────────┐      │
-         │  │  /data/batches/<batch_id>/input.jsonl             │      │
-         │  │  /data/batches/<batch_id>/results.jsonl           │      │
-         │  └────────────────────────────────────────────────────┘      │
+         │         │                │  │Head│ │Workers × 2 ││─scrape─►│
+         │    SQLAlchemy 2.0        │  │8265│ │Ray Data    ││:8080    │
+         │    (asyncpg)             │  │8080│ │+Transformers│         │
+         │         │                │  └──┬─┘ │+Qwen2.5-0.5B│   ┌─────┴──────┐
+         │  ┌──────┴──────┐         │     │   └──────┬──────┘   │ Prometheus │
+  curl  ─┼─►│  FastAPI    │────────►│     │iframe            │   │  (optional)│
+  :8000  │  │  proxy      │Jobs API │     │                  │   └─────┬──────┘
+  X-API  │  │             │(:8265)  │     ▼                  │         │
+         │  └──────┬──────┘         │  ┌──────────┐          │         ▼
+         │         │                │  │  Grafana │◄─datasrc─┼────────┘
+         │         ▼                │  │(optional)│          │
+         │  ┌──────────────── Shared PVC (hostPath) ────────┐│
+         │  │  /data/batches/<batch_id>/input.jsonl         ││
+         │  │  /data/batches/<batch_id>/results.jsonl       ││
+         │  └────────────────────────────────────────────────┘
          └────────────────────────────────────────────────────────────┘
 ```
+
+The **monitoring sub-stack** (Prometheus + Grafana) is optional —
+see §2.11 for the trade-offs and `scripts/install-monitoring.sh`
+for how to bring it up alongside the main stack. If not installed,
+the Ray dashboard hides its Metrics tab and everything else works
+unchanged.
 
 ### Data & control flow
 
@@ -148,6 +154,25 @@ A fresh RayCluster per API request would cost ~1-2 minutes of dead time on a lap
 **Decision:** Use [kind](https://kind.sigs.k8s.io/) for the local Kubernetes cluster.
 
 **Why:** KubeRay's own development docs and quickstart guides use kind as the canonical target. kind runs directly in Docker without a VM hypervisor layer, which makes CPU and memory accounting predictable on a laptop. `extraPortMappings` + `extraMounts` give us host-port exposure for `:8000` and host-path mounts for the shared PVC in a single config file.
+
+### 2.11 Minimal Prometheus + Grafana (Helm) over `kube-prometheus-stack`
+
+**Decision:** Install the `prometheus-community/prometheus` and `grafana/grafana` Helm charts separately with minimal footprints, rather than the bundled `kube-prometheus-stack`.
+
+**Why:**
+- `kube-prometheus-stack` is ~3 GB and 10+ pods (Prometheus Operator, CRDs, Alertmanager, Grafana, node-exporter, kube-state-metrics, probes, rules). On a WSL2 16 GB budget already hosting kind + KubeRay + the 2-worker RayCluster + Postgres + the API pod, that's too tight and it surfaces as OOMKilled pods under load.
+- Two separate minimal charts total **~500 MB** (Prometheus ~300 MB, Grafana ~150 MB) because sub-components are explicitly disabled: no Alertmanager, no Pushgateway, no Node Exporter, no Kube State Metrics, no persistence.
+- The integration the Ray dashboard actually needs (`RAY_PROMETHEUS_HOST`, `RAY_GRAFANA_HOST`, `RAY_GRAFANA_IFRAME_HOST`) only requires Prometheus + Grafana + a scrape config + dashboard provisioning. Everything else the larger chart would ship is dead weight for this specific integration.
+
+**Scrape config:** uses `kubernetes_sd_configs` pod discovery in the `ray` namespace, keeps only pods labeled by the KubeRay operator (`ray.io/cluster`), promotes `ray.io/cluster` and `ray.io/node-type` to Prometheus labels, rewrites `__address__` to the Ray metrics port (`:8080` — set via `rayStartParams.metrics-export-port`), and labels the series with pod name as `instance`. Committed in `k8s/monitoring/prometheus-values.yaml`.
+
+**Dashboard provisioning:** rather than hand-maintaining the Ray dashboard JSON in the repo (hundreds of KB, drifts from the running Ray version), `scripts/install-monitoring.sh` extracts the default dashboards live from `/tmp/ray/session_latest/metrics/grafana/dashboards/` on the running Ray head pod via `kubectl exec`, creates a ConfigMap labeled `grafana_dashboard=1`, and the Grafana sidecar auto-imports them. This guarantees the dashboard queries match the exact metric labels the running Ray version emits — zero version drift.
+
+**`RAY_GRAFANA_IFRAME_HOST` subtlety:** the Ray dashboard embeds Grafana panels as `<iframe src="...">`. The `src` URL is resolved by the **browser**, not the cluster — so it must be the port-forward target (`http://127.0.0.1:3000`), not the in-cluster DNS name. `RAY_GRAFANA_HOST` is separately used by the Ray head's backend health checks and IS the in-cluster DNS (`http://grafana.monitoring.svc.cluster.local:80`). Getting this distinction wrong produces a broken embed with no error message.
+
+**Trade-off accepted:** the monitoring stack is **optional**. If it's not installed, the Ray dashboard hides the Metrics tab but everything else works. The four `RAY_*` env vars on the head container cost nothing when the target services don't exist. This keeps the core demo path unaffected for graders who don't want to bring up monitoring.
+
+**Production upgrade path:** swap for `kube-prometheus-stack` with proper persistence, Alertmanager wired to PagerDuty/Slack, `node-exporter` + `kube-state-metrics` for cluster-level metrics, and Grafana Loki + Tempo for logs and traces. The scrape config and the Ray dashboard provisioning logic are reusable as-is — only the chart choice changes. The full monitoring plan (alert thresholds, dashboards, runbooks) lives in `docs/TECHNICAL_REPORT.md §5`.
 
 ---
 
@@ -291,6 +316,8 @@ See `TECHNICAL_REPORT.md` §5 for the full monitoring plan with Grafana dashboar
 | Qwen model | `Qwen/Qwen2.5-0.5B-Instruct` | From exercise brief |
 | Transformers | `>=4.45,<5` | Supports Qwen2.5 without issues |
 | PyTorch (CPU) | `>=2.3` | CPU inference backend for Transformers |
+| Prometheus (optional) | latest via `prometheus-community/prometheus` Helm chart | Minimal footprint (no sub-charts); scrapes Ray pods on `:8080` |
+| Grafana (optional) | latest via `grafana/grafana` Helm chart | Sidecar dashboard auto-import, Prometheus datasource pre-wired |
 
 ---
 
@@ -316,7 +343,7 @@ These are intentionally out of scope for the exercise. `TECHNICAL_REPORT.md` §6
 - **Multi-tenancy.** One API key, one cluster, one namespace.
 - **Horizontal pod autoscaling.** Fixed 2 Ray workers, fixed 1 API replica.
 - **TLS / ingress.** `kubectl port-forward` for local access. Production would use an Ingress + cert-manager.
-- **Metrics dashboards.** The Prometheus endpoints exist; Grafana dashboards are documented in the report but not shipped as JSON.
+- **Metrics dashboards (base stack).** Ray's default dashboards are auto-imported by the optional monitoring stack (§2.11); see `scripts/install-monitoring.sh` and `make monitoring-up`. Custom per-KPI dashboards from `TECHNICAL_REPORT.md §5.2` are documented but not shipped as JSON in the repo.
 - **End-to-end tracing.** OpenTelemetry spans across FastAPI → Ray → workers would be ideal; documented as a follow-up.
 
 ---

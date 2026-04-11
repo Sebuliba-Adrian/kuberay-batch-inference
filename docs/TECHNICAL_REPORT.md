@@ -338,7 +338,7 @@ A production deployment would track four families of metrics, each with alerts o
 
 5. **Pod-shaped workloads.** Ray head and workers are regular pods, so every Kubernetes scheduling primitive is available: `PodDisruptionBudget`, `PriorityClass`, `tolerations`, `nodeSelector`, `topologySpreadConstraints`, `nodeAffinity`, resource quotas, network policies.
 
-6. **Observability integration.** Ray metrics are exposed on `:8080` in Prometheus format; `kube-state-metrics` and `node-exporter` cover the pod/node layer. Drops into any existing Kubernetes monitoring stack with zero custom glue.
+6. **Observability integration.** Ray metrics are exposed on `:8080` in Prometheus format; `kube-state-metrics` and `node-exporter` cover the pod/node layer. Drops into any existing Kubernetes monitoring stack with zero custom glue. This repo ships a minimal reference implementation in `k8s/monitoring/` + `scripts/install-monitoring.sh` (opt-in via `make monitoring-up`) that brings up Prometheus + Grafana, wires Ray's `RAY_PROMETHEUS_HOST` / `RAY_GRAFANA_HOST` / `RAY_GRAFANA_IFRAME_HOST` env vars, extracts Ray's default dashboards live from the running head pod, and auto-imports them into Grafana via the sidecar provisioner. See `docs/ARCHITECTURE.md §2.11` for the decision rationale and `§5` below for the full production monitoring plan.
 
 **Limitations:**
 
@@ -367,6 +367,8 @@ A production deployment would track four families of metrics, each with alerts o
 - **Alertmanager** for alert routing to PagerDuty / Slack
 - **OpenTelemetry** tracing with spans for: HTTP request → DB query → Ray submit → status poll → result read. Spans exported to Tempo or Jaeger. **No prompt content in span attributes.**
 - **Loki** for log aggregation, with structured JSON logs from the FastAPI middleware and Ray workers
+
+**A reference implementation of the core two — Prometheus scraping Ray pods and Grafana auto-importing Ray's default dashboards — ships with this repo** as `k8s/monitoring/` + `scripts/install-monitoring.sh`, opt-in via `make monitoring-up`. The scrape config uses `kubernetes_sd_configs` pod discovery filtered by the `ray.io/cluster` label and rewrites `__address__` to the metrics port (`:8080`). Grafana's sidecar-based dashboard provisioner picks up a ConfigMap that `install-monitoring.sh` populates by extracting `/tmp/ray/session_latest/metrics/grafana/dashboards/` live from the running Ray head pod via `kubectl exec` — guaranteeing zero drift between the dashboard and the running Ray version. The Ray head container's `RAY_PROMETHEUS_HOST`, `RAY_GRAFANA_HOST`, and `RAY_GRAFANA_IFRAME_HOST` env vars are already declared in `k8s/raycluster/raycluster.yaml`, so once monitoring is installed a browser refresh of `http://localhost:8265/#/metrics` renders the time-series panels iframed from Grafana. The full Alertmanager / OpenTelemetry / Loki layers are deliberately left to production; see `docs/ARCHITECTURE.md §2.11` for the scope decision.
 
 ### 5.2 Dashboards
 
