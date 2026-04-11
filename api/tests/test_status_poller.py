@@ -431,6 +431,92 @@ async def test_apply_terminal_with_missing_row_returns_silently(
     )  # must not raise
 
 
+async def test_update_status_only_with_missing_row_returns_silently(
+    poller_env: tuple[_PollerFakeRay, Path],
+) -> None:
+    """
+    The compound-condition split in ``_update_status_only`` created two
+    explicit early-return branches. This test pins the first one (row
+    is None) so coverage.py tracks it deterministically across
+    Linux/3.11 and Windows/3.12.
+    """
+    from src.routes.batches import _update_status_only
+
+    # No seeding — row does not exist. Must not raise.
+    await _update_status_only("batch_missing", "in_progress")
+
+
+async def test_update_status_only_is_idempotent_when_status_unchanged(
+    poller_env: tuple[_PollerFakeRay, Path],
+) -> None:
+    """
+    The second early-return branch fires when the stored status already
+    matches the requested new status. Covering it explicitly keeps the
+    branch count honest.
+    """
+    from src import db
+    from src.db import Batch
+    from src.routes.batches import _update_status_only
+
+    async with db.session_scope() as s:
+        s.add(
+            Batch(
+                id="batch_idempotent",
+                status="in_progress",
+                model="m",
+                input_count=1,
+            )
+        )
+
+    # Calling with the SAME status should hit the early return branch,
+    # not actually mutate the row.
+    await _update_status_only("batch_idempotent", "in_progress")
+
+    async with db.session_scope() as s:
+        row = await db.get_batch(s, "batch_idempotent")
+    assert row is not None
+    assert row.status == "in_progress"
+
+
+# ─── Poller loop re-raises CancelledError from inside the sweep ────
+async def test_poller_loop_reraises_cancelled_error_from_sweep(
+    poller_env: tuple[_PollerFakeRay, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Force the cancellation to land WHILE ``poll_active_batches()`` is
+    mid-execution, not during the idle ``asyncio.sleep`` between
+    sweeps. This exercises the ``except asyncio.CancelledError: raise``
+    branch deterministically across platforms — otherwise coverage
+    only hits it when timing happens to put the task inside the try
+    block at cancel time.
+    """
+    import asyncio
+
+    from src.routes import batches as batches_mod
+
+    inside_sweep = asyncio.Event()
+
+    async def _slow_sweep() -> None:
+        inside_sweep.set()
+        # Long sleep guaranteed to still be awaiting when the task is
+        # cancelled — CancelledError will raise out of this sleep,
+        # unwind to the enclosing ``try``, and hit the
+        # ``except asyncio.CancelledError: raise`` branch.
+        await asyncio.sleep(10)
+
+    monkeypatch.setattr(batches_mod, "poll_active_batches", _slow_sweep)
+
+    task = await batches_mod.start_status_poller(interval_seconds=0.01)
+    # Wait until we know the task is INSIDE _slow_sweep (i.e. inside
+    # the try block), then cancel it.
+    await inside_sweep.wait()
+    await batches_mod.stop_status_poller(task)
+
+    assert task.done()
+    assert task.cancelled() or isinstance(task.exception(), asyncio.CancelledError)
+
+
 # ─── Poller loop swallows non-Cancelled exceptions ─────────────────
 async def test_poller_loop_logs_and_continues_on_sweep_exception(
     poller_env: tuple[_PollerFakeRay, Path],

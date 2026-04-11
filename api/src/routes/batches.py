@@ -390,10 +390,19 @@ async def _poll_one(batch_id: str, ray_job_id: str, input_count: int, results_ro
 
 
 async def _update_status_only(batch_id: str, new_status: str) -> None:
+    """
+    Flip an active batch's status without touching counts or
+    ``completed_at``. Split into two explicit early returns (rather
+    than a compound ``if`` condition) so coverage.py can trace both
+    exit paths deterministically across Linux/3.11 and Windows/3.12.
+    """
     async with db.session_scope() as session:
         row = await db.get_batch(session, batch_id)
-        if row is not None and row.status != new_status:
-            row.status = new_status
+        if row is None:
+            return
+        if row.status == new_status:
+            return
+        row.status = new_status
 
 
 async def _apply_success(
