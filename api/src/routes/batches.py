@@ -17,6 +17,7 @@ Error translation policy:
 
 from __future__ import annotations
 
+import asyncio
 import datetime as _dt
 import logging
 from pathlib import Path
@@ -31,6 +32,10 @@ from ..auth import require_api_key
 from ..config import Settings, get_settings
 from ..db import Batch
 from ..models import TERMINAL_STATUSES, BatchObject, CreateBatchRequest, RequestCounts
+
+# Default interval between poller sweeps. Overridable via start_status_poller
+# for tests that want a tighter loop.
+_DEFAULT_POLL_INTERVAL_SECONDS = 5.0
 
 log = logging.getLogger(__name__)
 
@@ -301,3 +306,152 @@ async def _attach_ray_job_id(batch_id: str, ray_job_id: str) -> None:
             log.error("_attach_ray_job_id: row not found: %s", batch_id)
             return
         row.ray_job_id = ray_job_id
+
+
+# ─── Background status poller ──────────────────────────────────────
+async def poll_active_batches() -> None:
+    """
+    Single pass of the background status poller.
+
+    For every batch not yet in a terminal state, query Ray for its
+    current job status and translate it to our BatchStatus vocabulary.
+    On terminal states (completed / failed / cancelled) we also read
+    the _SUCCESS / _FAILED marker files from the shared PVC so the
+    `request_counts` in the DB match what the worker actually wrote.
+
+    Individual Ray errors are caught and logged — a transient dashboard
+    hiccup should not stall every in-flight batch in the sweep.
+    """
+    settings = get_settings()
+    results_root = Path(settings.RESULTS_DIR)
+
+    async with db.session_scope() as session:
+        active = await db.list_active_batches(session)
+
+    if not active:
+        return
+
+    log.info("poller: sweeping %d active batches", len(active))
+    for row in active:
+        if row.ray_job_id is None:
+            # Row was created but Ray submission has not yet attached
+            # a submission id. Skip this pass — we'll catch it on the
+            # next one.
+            continue
+        try:
+            await _poll_one(row.id, row.ray_job_id, row.input_count, results_root)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("poller: failed to update %s: %s", row.id, exc)
+
+
+async def _poll_one(
+    batch_id: str, ray_job_id: str, input_count: int, results_root: Path
+) -> None:
+    """Update one batch row from its current Ray state."""
+    new_status = await ray_client.get_status(ray_job_id)
+
+    # Still active → just sync the current state in case it flipped
+    # from queued→in_progress.
+    if new_status not in TERMINAL_STATUSES:
+        await _update_status_only(batch_id, new_status)
+        return
+
+    # Terminal state → read markers for accurate counts/error.
+    now_utc = _dt.datetime.now(_dt.timezone.utc)
+
+    if new_status == "completed":
+        marker = storage.read_success_marker(results_root, batch_id)
+        if marker is not None:
+            await _apply_success(batch_id, marker, now_utc)
+        else:
+            # Worker finished but didn't write a marker — trust
+            # input_count as the completed count.
+            await _apply_success(
+                batch_id,
+                {"completed": input_count, "failed": 0},
+                now_utc,
+            )
+    elif new_status == "failed":
+        marker = storage.read_failure_marker(results_root, batch_id)
+        error_message = (
+            marker.get("error") if marker else "Ray job failed (no marker)"
+        )
+        await _apply_terminal(batch_id, "failed", error_message, now_utc)
+    else:  # cancelled
+        await _apply_terminal(batch_id, "cancelled", None, now_utc)
+
+
+async def _update_status_only(batch_id: str, new_status: str) -> None:
+    async with db.session_scope() as session:
+        row = await db.get_batch(session, batch_id)
+        if row is not None and row.status != new_status:
+            row.status = new_status
+
+
+async def _apply_success(
+    batch_id: str,
+    marker: dict,
+    completed_at: _dt.datetime,
+) -> None:
+    async with db.session_scope() as session:
+        row = await db.get_batch(session, batch_id)
+        if row is None:
+            return
+        row.status = "completed"
+        row.completed_count = int(marker.get("completed", 0))
+        row.failed_count = int(marker.get("failed", 0))
+        row.completed_at = completed_at
+
+
+async def _apply_terminal(
+    batch_id: str,
+    new_status: str,
+    error: str | None,
+    completed_at: _dt.datetime,
+) -> None:
+    async with db.session_scope() as session:
+        row = await db.get_batch(session, batch_id)
+        if row is None:
+            return
+        row.status = new_status
+        row.error = error
+        row.completed_at = completed_at
+
+
+# ─── Poller lifecycle ───────────────────────────────────────────────
+async def _poller_loop(interval_seconds: float) -> None:
+    """
+    Long-running loop that calls poll_active_batches on a fixed
+    interval. Cancelling the task breaks out of the loop cleanly.
+    """
+    log.info("status poller loop started (interval=%.1fs)", interval_seconds)
+    while True:
+        try:
+            await poll_active_batches()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log.error("poller: sweep raised: %s", exc)
+        await asyncio.sleep(interval_seconds)
+
+
+async def start_status_poller(
+    interval_seconds: float = _DEFAULT_POLL_INTERVAL_SECONDS,
+) -> asyncio.Task[None]:
+    """Spawn the poller as an asyncio task. Called from the app lifespan."""
+    return asyncio.create_task(
+        _poller_loop(interval_seconds),
+        name="status-poller",
+    )
+
+
+async def stop_status_poller(task: asyncio.Task[None]) -> None:
+    """
+    Cancel the poller task and await its completion. Called from the
+    app lifespan shutdown path.
+    """
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
