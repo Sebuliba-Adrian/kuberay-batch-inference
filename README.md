@@ -1,5 +1,19 @@
 # KubeRay Batch Inference
 
+[![CI](https://github.com/Sebuliba-Adrian/kuberay-batch-inference/actions/workflows/ci.yaml/badge.svg)](https://github.com/Sebuliba-Adrian/kuberay-batch-inference/actions/workflows/ci.yaml)
+[![Tests](https://img.shields.io/badge/tests-166_passing-brightgreen?style=flat-square)](api/tests)
+[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen?style=flat-square)](docs/TECHNICAL_REPORT.md#3-evaluation-strategy-and-results)
+[![TDD](https://img.shields.io/badge/TDD-red→green→refactor-red?style=flat-square)](docs/TECHNICAL_REPORT.md#3-evaluation-strategy-and-results)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+
+[![Python](https://img.shields.io/badge/python-3.11-blue?style=flat-square&logo=python&logoColor=white)](api/pyproject.toml)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Ray](https://img.shields.io/badge/Ray-2.54.1-028CF0?style=flat-square&logo=ray&logoColor=white)](https://docs.ray.io/)
+[![KubeRay](https://img.shields.io/badge/KubeRay-1.6.0-326CE5?style=flat-square&logo=kubernetes&logoColor=white)](https://github.com/ray-project/kuberay)
+[![Kubernetes](https://img.shields.io/badge/kubernetes-1.29-326CE5?style=flat-square&logo=kubernetes&logoColor=white)](https://kubernetes.io/)
+[![Postgres](https://img.shields.io/badge/postgres-16-336791?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Docker](https://img.shields.io/badge/docker-multi--stage-2496ED?style=flat-square&logo=docker&logoColor=white)](api/Dockerfile)
+
 Production-shaped reference implementation of a **distributed offline LLM batch inference service** built on [KubeRay](https://github.com/ray-project/kuberay), [Ray Data](https://docs.ray.io/en/latest/data/data.html), and [FastAPI](https://fastapi.tiangolo.com/). Target model: [`Qwen/Qwen2.5-0.5B-Instruct`](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct).
 
 The service exposes an OpenAI-shaped Batches API at `POST /v1/batches`, authenticates with a static `X-API-Key` header, submits distributed inference jobs to a long-running [`RayCluster`](https://docs.ray.io/en/latest/cluster/kubernetes/getting-started/raycluster-quick-start.html) via the [Ray Jobs API](https://docs.ray.io/en/latest/cluster/running-applications/job-submission/index.html), stores job metadata in PostgreSQL, and returns results as streamed `application/x-ndjson` read back from a shared PVC.
