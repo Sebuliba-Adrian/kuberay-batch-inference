@@ -19,6 +19,7 @@ from fastapi import FastAPI
 
 from .config import get_settings
 from .logging_config import configure_logging
+from .routes.batches import router as batches_router
 from .routes.health import router as health_router
 
 log = logging.getLogger(__name__)
@@ -50,5 +51,6 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health_router)
+    app.include_router(batches_router)
 
     return app

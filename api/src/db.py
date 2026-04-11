@@ -22,9 +22,9 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Integer, String, Text, func, select, text
+from sqlalchemy import DateTime, Integer, String, Text, select, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -57,15 +57,20 @@ class Batch(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     input_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     results_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Python-side default (not server_default) because SQLite's
+    # CURRENT_TIMESTAMP returns a naive datetime that aiosqlite
+    # surfaces without timezone info, breaking .timestamp() arithmetic
+    # in handlers. `datetime.now(UTC)` works for both SQLite and
+    # Postgres and round-trips cleanly as a tz-aware value.
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=func.now(),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
     completed_at: Mapped[datetime | None] = mapped_column(
