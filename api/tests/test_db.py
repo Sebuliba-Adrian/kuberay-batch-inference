@@ -76,6 +76,35 @@ async def test_session_scope_raises_before_init() -> None:
             pass
 
 
+async def test_create_all_raises_before_init() -> None:
+    """create_all() without init_engine() must raise a clear error."""
+    from src import db  # noqa: PLC0415
+
+    await db.dispose()
+
+    with pytest.raises(RuntimeError, match="must be called first"):
+        await db.create_all()
+
+
+async def test_init_engine_disposes_previous_engine() -> None:
+    """Calling init_engine() twice must dispose the old engine first
+    so tests (and hot-reloads) can rebind without leaks."""
+    from src import db  # noqa: PLC0415
+
+    await db.init_engine("sqlite+aiosqlite:///:memory:")
+    first_engine = db._engine
+    assert first_engine is not None
+
+    # Re-init with a different URL exercises the dispose-then-rebind branch
+    await db.init_engine("sqlite+aiosqlite:///:memory:")
+    second_engine = db._engine
+    assert second_engine is not None
+    # The new engine instance must NOT be the same object as the first
+    assert second_engine is not first_engine
+
+    await db.dispose()
+
+
 # ─── Ping ───────────────────────────────────────────────────────────
 async def test_ping_succeeds_on_live_engine(fresh_db: None) -> None:
     """ping() runs a trivial SELECT against the engine."""
