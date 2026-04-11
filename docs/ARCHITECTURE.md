@@ -12,35 +12,9 @@ A three-tier offline batch-inference service:
 2. **KubeRay + RayCluster** — a long-running distributed Ray cluster that executes the actual inference via Ray Data.
 3. **Shared storage** — PostgreSQL for job metadata and a shared persistent volume for JSONL inputs and results.
 
-```text
-         ┌─────────────────────── kind cluster ───────────────────────┐
-         │                                                            │
-         │                         ┌──────────────────┐               │
-         │                         │ KubeRay operator │               │
-         │                         └────────┬─────────┘               │
-         │                                  │ reconciles              │
-         │                                  ▼                         │
-         │  ┌─────────────┐         ┌───────────────────────┐         │
-         │  │ PostgreSQL  │         │     RayCluster        │         │
-         │  │ (job meta)  │         │                       │         │
-         │  └──────▲──────┘         │  ┌────┐ ┌────────────┐│         │
-         │         │                │  │Head│ │Workers × 2 ││─scrape─►│
-         │    SQLAlchemy 2.0        │  │8265│ │Ray Data    ││:8080    │
-         │    (asyncpg)             │  │8080│ │+Transformers│         │
-         │         │                │  └──┬─┘ │+Qwen2.5-0.5B│   ┌─────┴──────┐
-         │  ┌──────┴──────┐         │     │   └──────┬──────┘   │ Prometheus │
-  curl  ─┼─►│  FastAPI    │────────►│     │iframe            │   │  (optional)│
-  :8000  │  │  proxy      │Jobs API │     │                  │   └─────┬──────┘
-  X-API  │  │             │(:8265)  │     ▼                  │         │
-         │  └──────┬──────┘         │  ┌──────────┐          │         ▼
-         │         │                │  │  Grafana │◄─datasrc─┼────────┘
-         │         ▼                │  │(optional)│          │
-         │  ┌──────────────── Shared PVC (hostPath) ────────┐│
-         │  │  /data/batches/<batch_id>/input.jsonl         ││
-         │  │  /data/batches/<batch_id>/results.jsonl       ││
-         │  └────────────────────────────────────────────────┘
-         └────────────────────────────────────────────────────────────┘
-```
+![System architecture](images/01-architecture.png)
+
+*Figure 1 — End-to-end topology inside a single kind cluster. The FastAPI proxy, Postgres, KubeRay-managed RayCluster, and optional Prometheus/Grafana sub-stack all share one PVC for batch JSONL.*
 
 The **monitoring sub-stack** (Prometheus + Grafana) is optional —
 see §2.11 for the trade-offs and `scripts/install-monitoring.sh`
@@ -50,6 +24,10 @@ unchanged.
 
 ### Data & control flow
 
+![Request flow](images/02-request-flow.png)
+
+*Figure 2 — Numbered steps along both sides of the split: green (FastAPI) handles auth, persistence, and job submission; blue (Ray) runs the distributed inference and writes results back to the shared PVC.*
+
 1. Client `POST /v1/batches` with `X-API-Key` and `{model, input[], max_tokens}`.
 2. API authenticates (constant-time compare), validates the payload, assigns a ULID-based `batch_id`, inserts a row with `status=queued`, and writes the inputs to `/data/batches/<batch_id>/input.jsonl` on the shared PVC.
 3. API calls `JobSubmissionClient.submit_job` against the Ray head service (`http://<raycluster>-head-svc:8265`). The entrypoint is `python /app/jobs/batch_infer.py --batch-id <id>`, which is baked into the Ray worker image.
@@ -58,6 +36,12 @@ unchanged.
 6. A background task in the API polls Ray via `get_job_status` and updates the Postgres row when the job transitions to a terminal state.
 7. `GET /v1/batches/{id}` reads the row from Postgres.
 8. `GET /v1/batches/{id}/results` streams `results.jsonl` back to the client as `application/x-ndjson`.
+
+### Batch lifecycle state machine
+
+![Batch lifecycle](images/03-state-machine.png)
+
+*Figure 3 — The five states of a Batch row, mapped to Ray `JobStatus`. All transitions are driven by the async background poller on a 5 s tick; the POST handler only writes the initial `queued` row.*
 
 ---
 

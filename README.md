@@ -78,27 +78,17 @@ make grafana           # port-forwards Grafana to localhost:3000 (admin/admin)
 
 ## Architecture
 
-```text
-          ┌──────────────────────── kind cluster ────────────────────────┐
-          │                                                              │
-          │  ┌─────────────┐       ┌──────────────────────────────────┐  │
-          │  │ PostgreSQL  │       │       KubeRay operator           │  │
-          │  │ (job meta)  │       │  ┌────────────────────────────┐  │  │
-          │  └──────▲──────┘       │  │     RayCluster             │  │  │
-          │         │              │  │  ┌──────┐   ┌────────────┐ │  │  │
-  curl    │  ┌──────┴──────┐       │  │  │ Head │   │ Workers x2 │ │  │  │
-  :8000 ──┼─►│   FastAPI   │──────►│  │  │ 8265 │   │ Ray Data + │ │  │  │
-  X-API   │  │   proxy     │ Jobs  │  │  │      │   │ Transformers │  │  │
-          │  └──────┬──────┘  API  │  │  └──────┘   └──────┬─────┘ │  │  │
-          │         │              │  └─────────────────────┼──────┘  │  │
-          │         │              └────────────────────────┼─────────┘  │
-          │         ▼                                       ▼            │
-          │  ┌─────────────────── Shared PVC (RWX) ──────────────────┐   │
-          │  │  /data/batches/<id>/input.jsonl                       │   │
-          │  │  /data/batches/<id>/results.jsonl                     │   │
-          │  └────────────────────────────────────────────────────────┘   │
-          └──────────────────────────────────────────────────────────────┘
-```
+![System architecture](docs/images/01-architecture.png)
+
+End-to-end topology inside a single kind cluster. The FastAPI proxy, Postgres, KubeRay-managed RayCluster, and optional Prometheus/Grafana sub-stack all share one PVC for batch JSONL.
+
+![Request flow](docs/images/02-request-flow.png)
+
+Numbered steps along both sides of the split: green (FastAPI) handles auth, persistence, and job submission; blue (Ray) runs the distributed inference and writes results back to the shared PVC.
+
+![Batch lifecycle](docs/images/03-state-machine.png)
+
+The five states of a Batch row, mapped to Ray `JobStatus`. All transitions are driven by the async background poller on a 5 s tick; the `POST` handler only writes the initial `queued` row.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the decision log, trade-offs, and answers to the exercise's five key questions.
 
