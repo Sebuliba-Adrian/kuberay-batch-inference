@@ -39,6 +39,21 @@ spec:
         - name: batch-api
           image: local/batch-api:dev
           imagePullPolicy: IfNotPresent
+          # umask 0000 so batch subdirectories are created world-writable.
+          # The API pod runs as UID 10001 but Ray pods run as UID 1000
+          # (ray user in the rayproject/ray base image). hostPath volumes
+          # don't honor fsGroup, so we rely on permissive file modes to
+          # let both sides read/write the same /data/batches tree.
+          command: ["/bin/sh", "-c"]
+          args:
+            - >-
+              umask 0000 &&
+              exec uvicorn src.main:create_app
+              --factory
+              --host 0.0.0.0
+              --port 8000
+              --workers 1
+              --no-access-log
           ports:
             - name: http
               containerPort: 8000
