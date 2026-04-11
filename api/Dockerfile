@@ -58,7 +58,7 @@ RUN uv venv /app/.venv --python 3.11 \
       "sqlalchemy[asyncio]>=2.0.30,<3" \
       "asyncpg>=0.29,<1" \
       "aiofiles>=24.1,<25" \
-      "ray[client]==2.54.1" \
+      "ray[default]==2.54.1" \
       "python-ulid>=3.0,<4" \
       "orjson>=3.10,<4"
 
