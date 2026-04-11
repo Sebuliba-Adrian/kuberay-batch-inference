@@ -1,0 +1,17 @@
+# Non-secret runtime configuration for the batch API pod.
+# Secret values (API_KEY, DB credentials) live in k8s/api/secret.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: batch-api-config
+  namespace: ray
+  labels:
+    app.kubernetes.io/name: batch-api
+    app.kubernetes.io/part-of: kuberay-batch-inference
+data:
+  LOG_LEVEL: "INFO"
+  RAY_ADDRESS: "http://qwen-raycluster-head-svc.ray.svc.cluster.local:8265"
+  MODEL_NAME: "Qwen/Qwen2.5-0.5B-Instruct"
+  MAX_BATCH_SIZE: "1000"
+  RESULTS_DIR: "/data/batches"
+  # POSTGRES_URL is assembled from the Secret in the Deployment's env.

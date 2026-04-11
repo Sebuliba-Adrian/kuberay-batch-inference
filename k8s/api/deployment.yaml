@@ -1,0 +1,136 @@
+# FastAPI proxy Deployment.
+#
+# One replica for the demo. Production would run ≥2 replicas behind
+# a PodDisruptionBudget and use HorizontalPodAutoscaler based on
+# request-rate or CPU.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: batch-api
+  namespace: ray
+  labels:
+    app.kubernetes.io/name: batch-api
+    app.kubernetes.io/part-of: kuberay-batch-inference
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: batch-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: batch-api
+        app.kubernetes.io/part-of: kuberay-batch-inference
+    spec:
+      # Matches the UID baked into the Dockerfile.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: batch-api
+          image: local/batch-api:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+
+          # Tight container security context. Read-only root FS means
+          # the process can write only to explicitly mounted volumes.
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+          envFrom:
+            - configMapRef:
+                name: batch-api-config
+            - secretRef:
+                name: batch-api-secret
+          env:
+            # Assemble POSTGRES_URL from the Postgres secret so the
+            # same Secret that Postgres consumes stays the source of truth.
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_DB
+            - name: POSTGRES_HOST
+              value: "postgres.ray.svc.cluster.local"
+            - name: POSTGRES_URL
+              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):5432/$(POSTGRES_DB)"
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+
+          volumeMounts:
+            - name: batches
+              mountPath: /data/batches
+            # readOnlyRootFilesystem=true means we need scratch tmpfs
+            # mounts for any path the process writes to at runtime.
+            - name: tmp
+              mountPath: /tmp
+
+          # Liveness — cheap, process alive + HTTP serving
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+            timeoutSeconds: 3
+
+          # Readiness — deeper dependency check against Postgres + Ray
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
+            timeoutSeconds: 3
+
+          # Startup probe gives the lifespan plenty of time to init
+          # the DB schema on a cold cluster.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 24
+
+      volumes:
+        - name: batches
+          persistentVolumeClaim:
+            claimName: batches-pvc
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
