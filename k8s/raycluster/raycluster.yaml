@@ -112,8 +112,25 @@ spec:
               requests: { cpu: "1", memory: "2Gi" }
               limits:   { cpu: "2", memory: "3Gi" }
             env:
+              # ── Monitoring integration (optional) ────────────────
+              # These point the Ray dashboard at the Prometheus server
+              # (for time-series queries) and the Grafana server (for
+              # iframed panels). Installed via scripts/install-monitoring.sh
+              # which adds both into the `monitoring` namespace. The
+              # IFRAME_HOST is the BROWSER-FACING URL — with `kubectl
+              # port-forward svc/grafana 3000:80` it's 127.0.0.1:3000.
+              # If the monitoring stack is not installed, Ray gracefully
+              # hides the metrics tab; these env vars cost nothing.
+              - name: RAY_PROMETHEUS_HOST
+                value: "http://prometheus-server.monitoring.svc.cluster.local:80"
+              - name: RAY_PROMETHEUS_NAME
+                value: "Prometheus"
               - name: RAY_GRAFANA_HOST
-                value: ""
+                value: "http://grafana.monitoring.svc.cluster.local:80"
+              - name: RAY_GRAFANA_IFRAME_HOST
+                value: "http://127.0.0.1:3000"
+
+              # ── HuggingFace hub cache ────────────────────────────
               - name: HF_HOME
                 value: /home/ray/.cache/huggingface
               - name: HF_HUB_DISABLE_TELEMETRY

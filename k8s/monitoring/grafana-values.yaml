@@ -1,0 +1,88 @@
+# Helm values for grafana/grafana chart.
+#
+# Installed via scripts/install-monitoring.sh at release name "grafana"
+# in namespace "monitoring". Service name = "grafana" on port 80.
+#
+# The Ray default dashboards are provisioned via a sidecar-less
+# ConfigMap pattern: scripts/install-monitoring.sh extracts the JSON
+# from /tmp/ray/session_latest/metrics/grafana/dashboards/ on the Ray
+# head pod and creates a `grafana-ray-dashboards` ConfigMap. Grafana
+# picks it up via the `sidecar.dashboards` auto-discovery configured
+# below.
+
+# ─── Admin credentials ───────────────────────────────────────────────
+# Demo only. Production would use an external secret.
+adminUser: admin
+adminPassword: admin
+
+# ─── Persistence disabled ────────────────────────────────────────────
+persistence:
+  enabled: false
+
+# ─── Resource envelope ───────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# ─── Datasources ─────────────────────────────────────────────────────
+# Wire Prometheus as the default datasource. The URL uses the in-cluster
+# DNS name of the Prometheus server chart's Service.
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        url: http://prometheus-server.monitoring.svc.cluster.local:80
+        access: proxy
+        isDefault: true
+        editable: false
+        jsonData:
+          timeInterval: 15s
+          httpMethod: GET
+
+# ─── Dashboard auto-provisioning ─────────────────────────────────────
+# The Grafana chart ships a "sidecar" that watches ConfigMaps with a
+# specific label and imports any JSON inside them as dashboards. We
+# set the watch label to `grafana_dashboard=1` and populate the actual
+# ConfigMap in scripts/install-monitoring.sh after Grafana is up.
+sidecar:
+  dashboards:
+    enabled: true
+    label: grafana_dashboard
+    labelValue: "1"
+    searchNamespace: monitoring
+    folder: /tmp/dashboards
+    provider:
+      foldersFromFilesStructure: false
+  datasources:
+    enabled: false  # datasources.yaml above is sufficient
+
+# ─── Default config tweaks ───────────────────────────────────────────
+grafana.ini:
+  server:
+    # Grafana needs to know its public URL when Ray's dashboard iframes
+    # its panels from the browser — 127.0.0.1:3000 matches the
+    # RAY_GRAFANA_IFRAME_HOST we set on the Ray head container.
+    root_url: "%(protocol)s://%(domain)s:%(http_port)s/"
+  security:
+    # Allow embedding from the Ray dashboard (which runs on a different
+    # port than Grafana via kubectl port-forward).
+    allow_embedding: true
+  auth.anonymous:
+    # Enable anonymous read-only access so Ray dashboard panels render
+    # without the browser having to be logged in to Grafana. Production
+    # would disable this and use SSO.
+    enabled: true
+    org_role: Viewer
+
+# ─── Service ─────────────────────────────────────────────────────────
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000

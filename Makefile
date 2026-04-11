@@ -138,6 +138,27 @@ dashboard: ## Port-forward the Ray dashboard to localhost:8265 (blocks)
 	@echo "Ray dashboard: http://localhost:8265"
 	kubectl -n $(NAMESPACE) port-forward svc/$(RAYCLUSTER_NAME)-head-svc 8265:8265
 
+# ─── Monitoring: Prometheus + Grafana ────────────────────────────────
+.PHONY: monitoring-up
+monitoring-up: ## Install Prometheus + Grafana + Ray dashboards (idempotent)
+	bash scripts/install-monitoring.sh
+
+.PHONY: monitoring-down
+monitoring-down: ## Uninstall the monitoring stack and delete the namespace
+	-helm uninstall grafana -n monitoring
+	-helm uninstall prometheus -n monitoring
+	-kubectl delete namespace monitoring
+
+.PHONY: grafana
+grafana: ## Port-forward Grafana to localhost:3000 (blocks). admin/admin
+	@echo "Grafana: http://localhost:3000  (login: admin / admin)"
+	kubectl -n monitoring port-forward svc/grafana 3000:80
+
+.PHONY: prometheus
+prometheus: ## Port-forward Prometheus to localhost:9090 (blocks)
+	@echo "Prometheus: http://localhost:9090"
+	kubectl -n monitoring port-forward svc/prometheus-server 9090:80
+
 .PHONY: logs-api
 logs-api: ## Tail API pod logs
 	kubectl -n $(NAMESPACE) logs -f deploy/batch-api

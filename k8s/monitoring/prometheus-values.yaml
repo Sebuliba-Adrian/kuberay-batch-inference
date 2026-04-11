@@ -1,0 +1,105 @@
+# Helm values for prometheus-community/prometheus chart.
+#
+# Footprint kept minimal for the kind-in-WSL2 budget:
+#   - alertmanager, pushgateway, node-exporter, kube-state-metrics ALL off
+#   - server with no persistence, 15s scrape interval
+#   - RBAC enabled so pod-discovery works across the ray namespace
+#
+# Installed via scripts/install-monitoring.sh at release name "prometheus"
+# in namespace "monitoring". Service name = "prometheus-server".
+
+# ─── Sub-components disabled ─────────────────────────────────────────
+alertmanager:
+  enabled: false
+prometheus-pushgateway:
+  enabled: false
+prometheus-node-exporter:
+  enabled: false
+kube-state-metrics:
+  enabled: false
+
+# ─── Server config ────────────────────────────────────────────────────
+server:
+  # No persistence — this is a demo cluster, data is throwaway
+  persistentVolume:
+    enabled: false
+
+  # Short retention since we're not archiving
+  retention: "2h"
+
+  # Resource envelope tight enough for kind on WSL2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Scrape interval matches Ray's internal export cadence
+  global:
+    scrape_interval: 15s
+    evaluation_interval: 15s
+
+  # The ClusterRole the chart creates gives pod discovery across all
+  # namespaces — needed by the kubernetes_sd_configs in extraScrapeConfigs
+  # below to find Ray head and worker pods in the `ray` namespace.
+
+# ─── Custom scrape configs ───────────────────────────────────────────
+extraScrapeConfigs: |
+  # Ray Data + Ray Core metrics exposed on port 8080 by every Ray pod
+  # (head and workers). The port is set via rayStartParams.metrics-export-port
+  # on the RayCluster manifest, matching Ray's default.
+  - job_name: 'ray'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - ray
+    relabel_configs:
+      # Only scrape pods that actually belong to a RayCluster (labeled by
+      # the KubeRay operator). Skip the operator pods themselves.
+      - source_labels: [__meta_kubernetes_pod_label_ray_io_cluster]
+        action: keep
+        regex: .+
+      # Promote Ray labels to Prometheus labels so dashboards can group by them
+      - source_labels: [__meta_kubernetes_pod_label_ray_io_cluster]
+        target_label: ray_io_cluster
+      - source_labels: [__meta_kubernetes_pod_label_ray_io_node_type]
+        target_label: ray_io_node_type
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      # Rewrite __address__ to the pod IP + metrics port (8080) so the
+      # scrape targets are the metrics endpoint rather than the pod's
+      # default container port.
+      - source_labels: [__meta_kubernetes_pod_ip]
+        target_label: __address__
+        regex: (.+)
+        replacement: ${1}:8080
+      # Instance label = pod_name for human-readable graphs
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: instance
+
+  # FastAPI proxy metrics (future — when /metrics endpoint is added via
+  # prometheus-fastapi-instrumentator, this scrape config picks it up).
+  # Commented out because the endpoint isn't wired yet; uncomment when it is.
+  # - job_name: 'batch-api'
+  #   kubernetes_sd_configs:
+  #     - role: pod
+  #       namespaces:
+  #         names:
+  #           - ray
+  #   relabel_configs:
+  #     - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+  #       action: keep
+  #       regex: batch-api
+  #     - source_labels: [__meta_kubernetes_pod_ip]
+  #       target_label: __address__
+  #       regex: (.+)
+  #       replacement: ${1}:8000
+
+# ─── Service type ─────────────────────────────────────────────────────
+# ClusterIP is enough; we reach Prometheus via kubectl port-forward for
+# the demo. Production would front it with an Ingress + OAuth proxy.

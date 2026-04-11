@@ -67,6 +67,13 @@ curl http://localhost:8000/v1/batches/batch_01JABCD.../results \
   -H "X-API-Key: $API_KEY"
 # {"id":"0","prompt":"What is 2+2?","response":"The answer to 2 + 2 is 4. This is a simple addition problem...","finish_reason":"stop",...}
 # {"id":"1","prompt":"Hello world","response":"Hello! How can I help you today?","finish_reason":"stop",...}
+
+# 5. (Optional) Bring up Prometheus + Grafana for the Ray dashboard
+#    time-series tab — only needed if you want live metrics panels
+#    during the demo.
+make monitoring-up     # installs into the `monitoring` namespace
+make grafana           # port-forwards Grafana to localhost:3000 (admin/admin)
+# Then refresh http://localhost:8265/#/metrics in the Ray dashboard
 ```
 
 ## Architecture
@@ -104,6 +111,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the decision log, trade-o
 | Ray cluster | `k8s/raycluster/` | KubeRay v1.6.0 `RayCluster` CRD (`ray.io/v1`), CPU-only, 1 head + 2 workers |
 | Local Kubernetes | `k8s/kind/` | kind v0.27.0, k8s 1.29.4, NodePort 30800 for host access via `extraPortMappings` |
 | Storage | `k8s/postgres/`, `k8s/storage/` | Postgres 16, RWX PVC backed by kind `hostPath` + `extraMounts` |
+| Monitoring (optional) | `k8s/monitoring/`, `scripts/install-monitoring.sh` | Prometheus + Grafana via Helm, scraping Ray metrics on `:8080`, Ray's default dashboards auto-provisioned |
 | Scripts | `scripts/` | bash automation for Ubuntu 22.04 / 24.04 |
 | CI | `.github/workflows/ci.yaml` | ruff + mypy + pytest (`--cov-fail-under=100`) + kubeconform + docker buildx on `ubuntu-22.04` |
 
