@@ -205,13 +205,13 @@ curl http://localhost:8000/v1/batches/$BATCH_ID/results \
 |---|---|---|
 | Unit — config, auth, models, db, storage, ray_client | 91 | Pure logic + fakes |
 | Unit — routes (POST, GET, results, /ready) | 42 | httpx.ASGITransport + full dependency graph |
-| Unit — background poller | 13 | Every state transition + error paths |
+| Unit — background poller | 16 | Every state transition + error paths + cross-platform branch guards |
 | Lifespan wiring | 3 | Full boot + shutdown |
 | **E2E — happy path** | 2 | POST → poll → GET → results, real lifespan, no mocks at handler |
 | **E2E — failure paths** | 6 | Ray down, worker crash, /health still 200, /ready 503 |
-| **Total** | **166** | **100% line + 100% branch on 468 statements, 78 branches** |
+| **Total** | **169** | **100% line + 100% branch on 464 statements, 78 branches** |
 
-**Speaker notes:** This is the part I want to highlight most. The entire API layer was built **strict TDD** — failing test first, minimum impl to pass, refactor, then commit. Every line of `src/` exists because a test asked for it. CI has a `--cov-fail-under=100` gate — any regression fails the PR.
+**Speaker notes:** This is the part I want to highlight most. The entire API layer was built **strict TDD** — failing test first, minimum impl to pass, refactor, then commit. Every line of `src/` exists because a test asked for it. CI runs on `ubuntu-22.04` with a `--cov-fail-under=100` gate — any regression fails the PR. And the full stack has been runtime-verified on a real kind + KubeRay cluster with real Qwen2.5-0.5B inference, not just mocked tests (see docs/TECHNICAL_REPORT.md §3.5).
 
 **Time budget: 3 min**
 
@@ -223,9 +223,11 @@ curl http://localhost:8000/v1/batches/$BATCH_ID/results \
 
 One JSON object per input prompt, same order as input:
 
+Real output captured from the live kind + KubeRay run:
+
 ```json
-{"id":"0","prompt":"What is 2+2?","response":"2+2 equals 4.","finish_reason":"stop","prompt_tokens":6,"completion_tokens":8,"error":null}
-{"id":"1","prompt":"Hello world","response":"Hello! How can I help...","finish_reason":"stop","prompt_tokens":4,"completion_tokens":9,"error":null}
+{"id":"0","prompt":"What is 2+2?","response":"The answer to 2 + 2 is 4. This is a simple addition problem...","finish_reason":"stop",...}
+{"id":"1","prompt":"Hello world","response":"Hello! How can I help you today?","finish_reason":"stop",...}
 ```
 
 **Storage:** `/data/batches/<batch_id>/results.jsonl` on a shared PVC, written by Ray workers, read by the API pod.
@@ -383,7 +385,7 @@ kuberay-batch-inference/
 │   ├── API.md                     # REST reference with curl examples
 │   ├── TECHNICAL_REPORT.md        # 5-question deep dive + monitoring
 │   └── PRESENTATION.md            # ← this file
-├── api/                           # FastAPI proxy (166 tests, 100% cov)
+├── api/                           # FastAPI proxy (169 tests, 100% line + branch cov)
 │   ├── src/…
 │   ├── tests/…
 │   └── Dockerfile
