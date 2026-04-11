@@ -171,6 +171,32 @@ async def create_batch(
     return _batch_row_to_object(refreshed)
 
 
+# ─── GET /v1/batches/{batch_id} ─────────────────────────────────────
+@router.get(
+    "/batches/{batch_id}",
+    response_model=BatchObject,
+    summary="Get batch status and progress",
+)
+async def get_batch_status(batch_id: str) -> BatchObject:
+    """
+    Return the current state of a batch.
+
+    Reads directly from Postgres — does NOT query Ray. The background
+    status poller (separate TDD cycle) is responsible for keeping the
+    row up to date. This makes the hot-path GET fast and resilient
+    even when the Ray cluster is temporarily unreachable.
+    """
+    async with db.session_scope() as session:
+        row = await db.get_batch(session, batch_id)
+
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Batch not found: {batch_id}",
+        )
+    return _batch_row_to_object(row)
+
+
 # ─── Internal helpers ───────────────────────────────────────────────
 async def _mark_failed(batch_id: str, error: str) -> None:
     """
