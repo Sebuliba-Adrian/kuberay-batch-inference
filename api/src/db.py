@@ -20,9 +20,9 @@ Design notes
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, Integer, String, Text, select, text
 from sqlalchemy.ext.asyncio import (
@@ -32,6 +32,9 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 log = logging.getLogger(__name__)
 
@@ -64,18 +67,16 @@ class Batch(Base):
     # Postgres and round-trips cleanly as a tz-aware value.
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 # ─── Engine + session singletons ────────────────────────────────────
@@ -155,7 +156,5 @@ async def get_batch(session: AsyncSession, batch_id: str) -> Batch | None:
 
 async def list_active_batches(session: AsyncSession) -> list[Batch]:
     """Return batches that are not yet in a terminal state."""
-    result = await session.execute(
-        select(Batch).where(Batch.status.in_(("queued", "in_progress")))
-    )
+    result = await session.execute(select(Batch).where(Batch.status.in_(("queued", "in_progress"))))
     return list(result.scalars().all())

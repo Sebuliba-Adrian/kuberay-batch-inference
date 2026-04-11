@@ -22,11 +22,13 @@ read_success_marker, batch_dir).
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Iterable
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiofiles
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterable
+    from pathlib import Path
 
 INPUT_FILENAME = "input.jsonl"
 RESULTS_FILENAME = "results.jsonl"
@@ -88,7 +90,7 @@ async def iter_results_ndjson(
     if not path.exists():
         raise FileNotFoundError(f"Results file not found: {path}")
 
-    async with aiofiles.open(path, mode="r", encoding="utf-8") as fh:
+    async with aiofiles.open(path, encoding="utf-8") as fh:
         async for line in fh:
             yield line
 

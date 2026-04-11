@@ -18,8 +18,9 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -172,9 +173,7 @@ async def app_with_worker_failure(
 
 
 # ─── Failure: Ray unreachable at submit time ───────────────────────
-async def test_e2e_ray_unreachable_returns_503(
-    app_with_unreachable_ray: Any, api_key: str
-) -> None:
+async def test_e2e_ray_unreachable_returns_503(app_with_unreachable_ray: Any, api_key: str) -> None:
     """
     The exact exercise-PDF curl against an unreachable Ray must
     surface as a 503, not a 500, and the DB must contain a row
@@ -199,9 +198,9 @@ async def test_e2e_ray_unreachable_returns_503(
     assert "fake-ray" not in r.text
 
     # The DB row should still exist and be in status=failed
+    from sqlalchemy import select  # noqa: PLC0415
     from src import db  # noqa: PLC0415
     from src.db import Batch  # noqa: PLC0415
-    from sqlalchemy import select  # noqa: PLC0415
 
     async with db.session_scope() as s:
         rows = list((await s.execute(select(Batch))).scalars().all())
@@ -233,9 +232,9 @@ async def test_e2e_ray_unreachable_status_endpoint_still_works(
 
         # Find the row via direct DB query since the POST response
         # doesn't include the id on 503.
+        from sqlalchemy import select  # noqa: PLC0415
         from src import db  # noqa: PLC0415
         from src.db import Batch  # noqa: PLC0415
-        from sqlalchemy import select  # noqa: PLC0415
 
         async with db.session_scope() as s:
             row = (await s.execute(select(Batch))).scalar_one()

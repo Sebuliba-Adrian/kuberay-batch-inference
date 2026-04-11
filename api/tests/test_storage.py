@@ -104,8 +104,7 @@ async def test_iter_results_ndjson_streams_lines(tmp_path: Path) -> None:
     batch.mkdir()
     results = batch / "results.jsonl"
     results.write_text(
-        '{"id":"0","response":"hi"}\n'
-        '{"id":"1","response":"there"}\n',
+        '{"id":"0","response":"hi"}\n{"id":"1","response":"there"}\n',
         encoding="utf-8",
     )
 
@@ -218,9 +217,7 @@ def test_read_failure_marker_returns_error(tmp_path: Path) -> None:
     batch = tmp_path / "batch_f"
     batch.mkdir()
     (batch / "_FAILED").write_text(
-        json.dumps(
-            {"batch_id": "batch_f", "error": "boom", "failed_at": 123.0}
-        )
+        json.dumps({"batch_id": "batch_f", "error": "boom", "failed_at": 123.0})
     )
 
     info = read_failure_marker(tmp_path, "batch_f")

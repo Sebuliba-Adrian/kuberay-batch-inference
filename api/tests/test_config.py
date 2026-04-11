@@ -37,9 +37,7 @@ def test_settings_loads_api_key_from_env(monkeypatch: pytest.MonkeyPatch, api_ke
     assert s.API_KEY.get_secret_value() == api_key
 
 
-def test_api_key_is_redacted_in_repr(
-    monkeypatch: pytest.MonkeyPatch, api_key: str
-) -> None:
+def test_api_key_is_redacted_in_repr(monkeypatch: pytest.MonkeyPatch, api_key: str) -> None:
     """The actual secret must NEVER appear in repr(Settings) or str(Settings)."""
     monkeypatch.setenv("API_KEY", api_key)
 

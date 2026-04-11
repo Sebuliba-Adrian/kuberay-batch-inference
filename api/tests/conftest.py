@@ -13,7 +13,6 @@ from collections.abc import Iterator
 
 import pytest
 
-
 # ─── Keys that Settings reads ────────────────────────────────────────
 # Any env var a Settings subclass looks at goes in this list so the
 # autouse fixture can scrub it between tests.

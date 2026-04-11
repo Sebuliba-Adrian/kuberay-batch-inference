@@ -161,9 +161,7 @@ async def test_session_scope_commits_on_success(fresh_db: None) -> None:
     from src.db import Batch  # noqa: PLC0415
 
     async with db.session_scope() as s:
-        s.add(
-            Batch(id="batch_commit", status="queued", model="m", input_count=1)
-        )
+        s.add(Batch(id="batch_commit", status="queued", model="m", input_count=1))
     # If commit didn't fire, the row would be missing in a fresh session.
     async with db.session_scope() as s:
         row = await db.get_batch(s, "batch_commit")
@@ -180,11 +178,7 @@ async def test_session_scope_rolls_back_on_exception(fresh_db: None) -> None:
 
     with pytest.raises(DeliberateError):
         async with db.session_scope() as s:
-            s.add(
-                Batch(
-                    id="batch_rollback", status="queued", model="m", input_count=1
-                )
-            )
+            s.add(Batch(id="batch_rollback", status="queued", model="m", input_count=1))
             raise DeliberateError
 
     # Row must NOT be visible — rollback fired.

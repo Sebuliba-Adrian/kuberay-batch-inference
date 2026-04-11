@@ -25,8 +25,9 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -53,9 +54,7 @@ class E2EFakeRay:
         # Populated by submit_job: ray_job_id -> batch_id
         self._job_to_batch: dict[str, str] = {}
 
-    def submit_job(
-        self, *, entrypoint: str, runtime_env: Any = None
-    ) -> str:
+    def submit_job(self, *, entrypoint: str, runtime_env: Any = None) -> str:
         # Parse the batch id out of the entrypoint so we know where
         # to write the _SUCCESS marker + results.jsonl when the
         # "job" reaches SUCCEEDED.
@@ -196,9 +195,7 @@ async def e2e_app(
 
 
 # ─── The E2E flow ──────────────────────────────────────────────────
-async def test_full_happy_path_post_poll_results(
-    e2e_app: tuple[Any, Path], api_key: str
-) -> None:
+async def test_full_happy_path_post_poll_results(e2e_app: tuple[Any, Path], api_key: str) -> None:
     """
     Reproduces the exact curl from the exercise PDF and asserts the
     whole happy path works: 200 on POST with status=queued, then the
@@ -252,9 +249,7 @@ async def test_full_happy_path_post_poll_results(
                 final_body = body
                 break
             if body["status"] in ("failed", "cancelled"):
-                raise AssertionError(
-                    f"Batch ended in unexpected terminal state: {body}"
-                )
+                raise AssertionError(f"Batch ended in unexpected terminal state: {body}")
             await asyncio.sleep(0.05)
 
         assert final_body is not None, "batch never reached completed"

@@ -15,8 +15,9 @@ Tests fake both dependencies independently so we can exercise:
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -26,8 +27,10 @@ class _FakeRay:
     def __init__(self, address: str) -> None: ...
     def submit_job(self, *, entrypoint: str, runtime_env: Any = None) -> str:
         return "raysubmit"
+
     def get_job_status(self, _sid: str) -> str:
         return "PENDING"
+
     def list_jobs(self) -> list[Any]:
         return []
 
@@ -55,9 +58,7 @@ async def ready_app(
     from src import db, ray_client  # noqa: PLC0415
     from src.main import create_app  # noqa: PLC0415
 
-    await db.init_engine(
-        "sqlite+aiosqlite:///file:ready_test?mode=memory&cache=shared&uri=true"
-    )
+    await db.init_engine("sqlite+aiosqlite:///file:ready_test?mode=memory&cache=shared&uri=true")
     await db.create_all()
 
     ray_client.reset()
@@ -132,9 +133,7 @@ async def test_ready_returns_503_when_ray_down(
     from src import db, ray_client  # noqa: PLC0415
     from src.main import create_app  # noqa: PLC0415
 
-    await db.init_engine(
-        "sqlite+aiosqlite:///file:ready_test2?mode=memory&cache=shared&uri=true"
-    )
+    await db.init_engine("sqlite+aiosqlite:///file:ready_test2?mode=memory&cache=shared&uri=true")
     await db.create_all()
 
     ray_client.reset()

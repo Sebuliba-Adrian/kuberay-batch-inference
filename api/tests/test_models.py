@@ -82,18 +82,14 @@ def test_create_batch_request_rejects_zero_max_tokens() -> None:
     from src.models import CreateBatchRequest
 
     with pytest.raises(ValidationError):
-        CreateBatchRequest(
-            model="foo", input=[{"prompt": "x"}], max_tokens=0
-        )
+        CreateBatchRequest(model="foo", input=[{"prompt": "x"}], max_tokens=0)
 
 
 def test_create_batch_request_rejects_negative_max_tokens() -> None:
     from src.models import CreateBatchRequest
 
     with pytest.raises(ValidationError):
-        CreateBatchRequest(
-            model="foo", input=[{"prompt": "x"}], max_tokens=-1
-        )
+        CreateBatchRequest(model="foo", input=[{"prompt": "x"}], max_tokens=-1)
 
 
 def test_create_batch_request_rejects_max_tokens_over_limit() -> None:
@@ -101,9 +97,7 @@ def test_create_batch_request_rejects_max_tokens_over_limit() -> None:
     from src.models import CreateBatchRequest
 
     with pytest.raises(ValidationError):
-        CreateBatchRequest(
-            model="foo", input=[{"prompt": "x"}], max_tokens=10_000
-        )
+        CreateBatchRequest(model="foo", input=[{"prompt": "x"}], max_tokens=10_000)
 
 
 # ─── CreateBatchRequest: model name ─────────────────────────────────
@@ -112,9 +106,7 @@ def test_create_batch_request_rejects_model_with_spaces() -> None:
     from src.models import CreateBatchRequest
 
     with pytest.raises(ValidationError):
-        CreateBatchRequest(
-            model="qwen 2.5 0.5b", input=[{"prompt": "x"}]
-        )
+        CreateBatchRequest(model="qwen 2.5 0.5b", input=[{"prompt": "x"}])
 
 
 def test_create_batch_request_accepts_huggingface_style_model() -> None:

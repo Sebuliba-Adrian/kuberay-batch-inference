@@ -10,8 +10,9 @@ fast and resilient to Ray outages.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -21,8 +22,10 @@ class _FakeRay:
     def __init__(self, address: str) -> None: ...
     def submit_job(self, *, entrypoint: str, runtime_env: Any = None) -> str:
         return "raysubmit_fake"
+
     def get_job_status(self, _sid: str) -> str:
         return "PENDING"
+
     def list_jobs(self) -> list[Any]:
         return []
 
@@ -114,33 +117,23 @@ async def test_get_batch_rejects_missing_api_key(
 
 
 async def test_get_batch_rejects_wrong_api_key(app_and_db: Any) -> None:
-    status, body = await _get(
-        app_and_db, "batch_anything", headers={"X-API-Key": "wrong"}
-    )
+    status, body = await _get(app_and_db, "batch_anything", headers={"X-API-Key": "wrong"})
     assert status == 401
     assert body.get("detail") == "Invalid API key"
 
 
 # ─── Not found ──────────────────────────────────────────────────────
-async def test_get_unknown_batch_returns_404(
-    app_and_db: Any, api_key: str
-) -> None:
-    status, body = await _get(
-        app_and_db, "batch_does_not_exist", headers={"X-API-Key": api_key}
-    )
+async def test_get_unknown_batch_returns_404(app_and_db: Any, api_key: str) -> None:
+    status, body = await _get(app_and_db, "batch_does_not_exist", headers={"X-API-Key": api_key})
     assert status == 404
     assert "not found" in body.get("detail", "").lower()
 
 
 # ─── Happy paths per state ──────────────────────────────────────────
-async def test_get_queued_batch_returns_full_shape(
-    app_and_db: Any, api_key: str
-) -> None:
+async def test_get_queued_batch_returns_full_shape(app_and_db: Any, api_key: str) -> None:
     await _seed_batch(batch_id="batch_q", status="queued", input_count=5)
 
-    status, body = await _get(
-        app_and_db, "batch_q", headers={"X-API-Key": api_key}
-    )
+    status, body = await _get(app_and_db, "batch_q", headers={"X-API-Key": api_key})
 
     assert status == 200
     assert body["id"] == "batch_q"
@@ -154,9 +147,7 @@ async def test_get_queued_batch_returns_full_shape(
     assert isinstance(body["created_at"], int)
 
 
-async def test_get_in_progress_batch(
-    app_and_db: Any, api_key: str
-) -> None:
+async def test_get_in_progress_batch(app_and_db: Any, api_key: str) -> None:
     await _seed_batch(
         batch_id="batch_p",
         status="in_progress",
@@ -164,9 +155,7 @@ async def test_get_in_progress_batch(
         completed_count=3,
     )
 
-    status, body = await _get(
-        app_and_db, "batch_p", headers={"X-API-Key": api_key}
-    )
+    status, body = await _get(app_and_db, "batch_p", headers={"X-API-Key": api_key})
 
     assert status == 200
     assert body["status"] == "in_progress"
@@ -174,16 +163,14 @@ async def test_get_in_progress_batch(
     assert body["request_counts"]["total"] == 10
 
 
-async def test_get_completed_batch_has_completed_at(
-    app_and_db: Any, api_key: str
-) -> None:
+async def test_get_completed_batch_has_completed_at(app_and_db: Any, api_key: str) -> None:
     """A completed batch must surface completed_at as Unix seconds."""
     import datetime as _dt
 
     from src import db  # noqa: PLC0415
     from src.db import Batch  # noqa: PLC0415
 
-    now_utc = _dt.datetime.now(_dt.timezone.utc)
+    now_utc = _dt.datetime.now(_dt.UTC)
     async with db.session_scope() as s:
         s.add(
             Batch(
@@ -197,9 +184,7 @@ async def test_get_completed_batch_has_completed_at(
             )
         )
 
-    status, body = await _get(
-        app_and_db, "batch_done", headers={"X-API-Key": api_key}
-    )
+    status, body = await _get(app_and_db, "batch_done", headers={"X-API-Key": api_key})
 
     assert status == 200
     assert body["status"] == "completed"
@@ -207,9 +192,7 @@ async def test_get_completed_batch_has_completed_at(
     assert abs(body["completed_at"] - int(now_utc.timestamp())) < 2
 
 
-async def test_get_failed_batch_exposes_error(
-    app_and_db: Any, api_key: str
-) -> None:
+async def test_get_failed_batch_exposes_error(app_and_db: Any, api_key: str) -> None:
     await _seed_batch(
         batch_id="batch_fail",
         status="failed",
@@ -218,9 +201,7 @@ async def test_get_failed_batch_exposes_error(
         error="Ray cluster unreachable",
     )
 
-    status, body = await _get(
-        app_and_db, "batch_fail", headers={"X-API-Key": api_key}
-    )
+    status, body = await _get(app_and_db, "batch_fail", headers={"X-API-Key": api_key})
 
     assert status == 200
     assert body["status"] == "failed"
@@ -229,9 +210,7 @@ async def test_get_failed_batch_exposes_error(
 
 
 # ─── Batch id format ────────────────────────────────────────────────
-async def test_get_handles_arbitrary_batch_id_characters(
-    app_and_db: Any, api_key: str
-) -> None:
+async def test_get_handles_arbitrary_batch_id_characters(app_and_db: Any, api_key: str) -> None:
     """Valid ULID-style ids (letters + digits) must route correctly."""
     await _seed_batch(batch_id="batch_01ABCXYZ0123456789")
 

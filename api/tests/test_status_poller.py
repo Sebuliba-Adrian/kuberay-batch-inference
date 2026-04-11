@@ -16,8 +16,9 @@ Pipeline for each active batch:
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 import pytest
 
@@ -302,7 +303,7 @@ async def test_poll_skips_rows_without_ray_job_id(
     during create_batch. The poller must ignore those rows rather than
     crash on a None submission id.
     """
-    fake, _root = poller_env
+    _fake, _root = poller_env
     # Intentionally do NOT set a status in fake.statuses
     from src import db  # noqa: PLC0415
     from src.db import Batch  # noqa: PLC0415
@@ -411,7 +412,7 @@ async def test_apply_success_with_missing_row_returns_silently(
     await _apply_success(
         "batch_missing",
         {"completed": 1, "failed": 0},
-        _dt.datetime.now(_dt.timezone.utc),
+        _dt.datetime.now(_dt.UTC),
     )  # must not raise
 
 
@@ -426,7 +427,7 @@ async def test_apply_terminal_with_missing_row_returns_silently(
         "batch_missing",
         "failed",
         "some error",
-        _dt.datetime.now(_dt.timezone.utc),
+        _dt.datetime.now(_dt.UTC),
     )  # must not raise
 
 
@@ -464,6 +465,4 @@ async def test_poller_loop_logs_and_continues_on_sweep_exception(
     await batches_mod.stop_status_poller(task)
 
     assert sweep_count["n"] >= 2
-    assert any(
-        "sweep raised" in record.message for record in caplog.records
-    )
+    assert any("sweep raised" in record.message for record in caplog.records)

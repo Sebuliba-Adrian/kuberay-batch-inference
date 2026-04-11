@@ -9,9 +9,13 @@ pipeline, not just the function in isolation.
 
 from __future__ import annotations
 
-import pytest
+from typing import TYPE_CHECKING
+
 from fastapi import Depends, FastAPI
 from httpx import ASGITransport, AsyncClient
+
+if TYPE_CHECKING:
+    import pytest
 
 # ─── Helpers ────────────────────────────────────────────────────────
 # Each test constructs its own mini-app so there is zero cross-test
@@ -41,9 +45,7 @@ async def _get(
 
 
 # ─── Missing header ─────────────────────────────────────────────────
-async def test_missing_api_key_returns_401(
-    monkeypatch: pytest.MonkeyPatch, api_key: str
-) -> None:
+async def test_missing_api_key_returns_401(monkeypatch: pytest.MonkeyPatch, api_key: str) -> None:
     """No header at all → 401 Unauthorized."""
     monkeypatch.setenv("API_KEY", api_key)
 
@@ -66,15 +68,11 @@ async def test_missing_api_key_sets_www_authenticate_header(
 
 
 # ─── Invalid header ─────────────────────────────────────────────────
-async def test_wrong_api_key_returns_401(
-    monkeypatch: pytest.MonkeyPatch, api_key: str
-) -> None:
+async def test_wrong_api_key_returns_401(monkeypatch: pytest.MonkeyPatch, api_key: str) -> None:
     """Wrong key value → 401 with 'Invalid' detail, not 403."""
     monkeypatch.setenv("API_KEY", api_key)
 
-    status, _headers, body = await _get(
-        _build_app(), headers={"X-API-Key": "not-the-right-key"}
-    )
+    status, _headers, body = await _get(_build_app(), headers={"X-API-Key": "not-the-right-key"})
 
     assert status == 401
     assert body.get("detail") == "Invalid API key"
@@ -86,23 +84,17 @@ async def test_wrong_api_key_sets_www_authenticate_header(
     """Invalid-key 401 must also carry WWW-Authenticate."""
     monkeypatch.setenv("API_KEY", api_key)
 
-    _status, headers, _body = await _get(
-        _build_app(), headers={"X-API-Key": "not-the-right-key"}
-    )
+    _status, headers, _body = await _get(_build_app(), headers={"X-API-Key": "not-the-right-key"})
 
     assert headers.get("www-authenticate", headers.get("WWW-Authenticate")) == "APIKey"
 
 
 # ─── Valid header ───────────────────────────────────────────────────
-async def test_valid_api_key_allows_request(
-    monkeypatch: pytest.MonkeyPatch, api_key: str
-) -> None:
+async def test_valid_api_key_allows_request(monkeypatch: pytest.MonkeyPatch, api_key: str) -> None:
     """Matching key → 200 and the protected route runs."""
     monkeypatch.setenv("API_KEY", api_key)
 
-    status, _headers, body = await _get(
-        _build_app(), headers={"X-API-Key": api_key}
-    )
+    status, _headers, body = await _get(_build_app(), headers={"X-API-Key": api_key})
 
     assert status == 200
     assert body == {"ok": "true"}
@@ -114,9 +106,7 @@ async def test_empty_api_key_header_returns_401(
     """An explicit empty string header is still invalid."""
     monkeypatch.setenv("API_KEY", api_key)
 
-    status, _headers, _body = await _get(
-        _build_app(), headers={"X-API-Key": ""}
-    )
+    status, _headers, _body = await _get(_build_app(), headers={"X-API-Key": ""})
 
     assert status == 401
 
@@ -151,9 +141,7 @@ def test_require_api_key_uses_constant_time_compare(
         await _get(_build_app(), headers={"X-API-Key": api_key})
         await _get(_build_app(), headers={"X-API-Key": "wrong"})
 
-    asyncio.get_event_loop().run_until_complete(_exercise()) if False else asyncio.run(
-        _exercise()
-    )
+    asyncio.get_event_loop().run_until_complete(_exercise()) if False else asyncio.run(_exercise())
 
     assert len(called) >= 1, "hmac.compare_digest was never called — auth is insecure"
 
@@ -168,13 +156,9 @@ async def test_api_key_header_name_is_x_api_key(
     monkeypatch.setenv("API_KEY", api_key)
 
     # Wrong header name: Authorization: Bearer <key>
-    status_wrong, _, _ = await _get(
-        _build_app(), headers={"Authorization": f"Bearer {api_key}"}
-    )
+    status_wrong, _, _ = await _get(_build_app(), headers={"Authorization": f"Bearer {api_key}"})
     assert status_wrong == 401
 
     # Case variation: lowercase still works (HTTP is case-insensitive)
-    status_ok, _, _ = await _get(
-        _build_app(), headers={"x-api-key": api_key}
-    )
+    status_ok, _, _ = await _get(_build_app(), headers={"x-api-key": api_key})
     assert status_ok == 200

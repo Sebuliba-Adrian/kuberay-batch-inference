@@ -13,8 +13,9 @@ wrote to the shared PVC. Contract:
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -24,8 +25,10 @@ class _FakeRay:
     def __init__(self, address: str) -> None: ...
     def submit_job(self, *, entrypoint: str, runtime_env: Any = None) -> str:
         return "raysubmit_fake"
+
     def get_job_status(self, _sid: str) -> str:
         return "PENDING"
+
     def list_jobs(self) -> list[Any]:
         return []
 
@@ -254,9 +257,7 @@ async def test_results_streaming_preserves_order(
     app, root = app_db_storage
     rows = [{"id": str(i), "response": f"r{i}"} for i in range(10)]
     _write_results_jsonl(root, "batch_ord", rows)
-    await _seed_batch(
-        "batch_ord", "completed", input_count=10, completed_count=10
-    )
+    await _seed_batch("batch_ord", "completed", input_count=10, completed_count=10)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:

@@ -26,9 +26,7 @@ class FakeRayClient:
         self.ping_should_fail = False
         self._next_id = 0
 
-    def submit_job(
-        self, *, entrypoint: str, runtime_env: dict[str, Any] | None = None
-    ) -> str:
+    def submit_job(self, *, entrypoint: str, runtime_env: dict[str, Any] | None = None) -> str:
         self._next_id += 1
         sub_id = f"raysubmit_{self._next_id:04d}"
         self.submissions.append(

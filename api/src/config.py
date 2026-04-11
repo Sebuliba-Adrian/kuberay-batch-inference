@@ -84,9 +84,7 @@ class Settings(BaseSettings):
         # We speak the Ray Jobs HTTP API (port 8265), not the gRPC
         # client protocol (port 10001), so ray:// / tcp:// are wrong.
         if not v.startswith(("http://", "https://")):
-            raise ValueError(
-                f"RAY_ADDRESS must start with http:// or https://, got {v!r}"
-            )
+            raise ValueError(f"RAY_ADDRESS must start with http:// or https://, got {v!r}")
         return v.rstrip("/")
 
     @field_validator("POSTGRES_URL")
@@ -94,10 +92,7 @@ class Settings(BaseSettings):
     def _postgres_url_must_be_async(cls, v: str) -> str:
         # The whole codebase uses SQLAlchemy async — a sync driver would
         # deadlock the event loop the moment it's used.
-        if not (
-            v.startswith("postgresql+asyncpg://")
-            or v.startswith("sqlite+aiosqlite://")
-        ):
+        if not (v.startswith("postgresql+asyncpg://") or v.startswith("sqlite+aiosqlite://")):
             raise ValueError(
                 "POSTGRES_URL must use an async driver "
                 "(postgresql+asyncpg:// or sqlite+aiosqlite://), "

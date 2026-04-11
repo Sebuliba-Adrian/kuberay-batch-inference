@@ -11,8 +11,9 @@ FastAPI middleware + dependency graph via httpx.ASGITransport.
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -29,9 +30,7 @@ class FakeRayClient:
         self._next_id = 0
         self.status = "PENDING"
 
-    def submit_job(
-        self, *, entrypoint: str, runtime_env: dict[str, Any] | None = None
-    ) -> str:
+    def submit_job(self, *, entrypoint: str, runtime_env: dict[str, Any] | None = None) -> str:
         if self.should_fail:
             raise ConnectionError("ray dashboard unreachable")
         self._next_id += 1
@@ -75,9 +74,7 @@ async def app_and_deps(
     from src.main import create_app  # noqa: PLC0415
 
     # 3. Initialize the DB
-    await db.init_engine(
-        "sqlite+aiosqlite:///file:batches_test?mode=memory&cache=shared&uri=true"
-    )
+    await db.init_engine("sqlite+aiosqlite:///file:batches_test?mode=memory&cache=shared&uri=true")
     await db.create_all()
 
     # 4. Inject the fake Ray client
@@ -362,9 +359,9 @@ async def test_post_batch_row_is_failed_when_ray_down(
         json_body={"model": "m", "input": [{"prompt": "x"}], "max_tokens": 10},
     )
 
+    from sqlalchemy import select  # noqa: PLC0415
     from src import db  # noqa: PLC0415
     from src.db import Batch  # noqa: PLC0415
-    from sqlalchemy import select  # noqa: PLC0415
 
     async with db.session_scope() as s:
         rows = list((await s.execute(select(Batch))).scalars().all())

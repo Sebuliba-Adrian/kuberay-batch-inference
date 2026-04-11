@@ -32,9 +32,7 @@ BatchStatus = Literal[
     "cancelled",
 ]
 
-TERMINAL_STATUSES: frozenset[BatchStatus] = frozenset(
-    {"completed", "failed", "cancelled"}
-)
+TERMINAL_STATUSES: frozenset[BatchStatus] = frozenset({"completed", "failed", "cancelled"})
 
 
 # ─── Request models ────────────────────────────────────────────────

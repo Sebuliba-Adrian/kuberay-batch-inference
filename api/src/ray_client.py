@@ -27,9 +27,12 @@ Ray version that adds a state we don't recognize yet.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from starlette.concurrency import run_in_threadpool
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 log = logging.getLogger(__name__)
 
@@ -100,10 +103,7 @@ def map_status(ray_status: Any) -> str:
     """
     # Real ``ray.job_submission.JobStatus`` is an enum whose ``.value``
     # is the uppercase string. Accept both forms for ergonomics.
-    if hasattr(ray_status, "value"):
-        raw = str(ray_status.value).upper()
-    else:
-        raw = str(ray_status).upper()
+    raw = str(ray_status.value).upper() if hasattr(ray_status, "value") else str(ray_status).upper()
     return _STATUS_MAP.get(raw, "failed")
 
 

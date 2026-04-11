@@ -22,21 +22,24 @@ The lifespan context manager wires production boot and shutdown:
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI
 
 from . import db, ray_client
 from .config import get_settings
-from .logging_config import configure_logging
 from .routes.batches import (
     router as batches_router,
+)
+from .routes.batches import (
     start_status_poller,
     stop_status_poller,
 )
 from .routes.health import router as health_router
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 log = logging.getLogger(__name__)
 

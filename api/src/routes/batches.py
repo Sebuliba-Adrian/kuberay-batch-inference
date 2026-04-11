@@ -18,20 +18,27 @@ Error translation policy:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime as _dt
 import logging
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from ulid import ULID
 
-from .. import db, ray_client, storage
-from ..auth import require_api_key
-from ..config import Settings, get_settings
-from ..db import Batch
-from ..models import TERMINAL_STATUSES, BatchObject, CreateBatchRequest, RequestCounts
+from src import db, ray_client, storage
+from src.auth import require_api_key
+from src.config import Settings, get_settings
+from src.db import Batch
+from src.models import (
+    TERMINAL_STATUSES,
+    BatchObject,
+    BatchStatus,
+    CreateBatchRequest,
+    RequestCounts,
+)
 
 # Default interval between poller sweeps. Overridable via start_status_poller
 # for tests that want a tighter loop.
@@ -69,16 +76,23 @@ def _to_unix(dt: _dt.datetime) -> int:
     datetimes natively and this branch is a no-op there.
     """
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=_dt.timezone.utc)
+        dt = dt.replace(tzinfo=_dt.UTC)
     return int(dt.timestamp())
 
 
 def _batch_row_to_object(row: Batch) -> BatchObject:
-    """Convert a DB row to the OpenAI-shaped response model."""
+    """Convert a DB row to the OpenAI-shaped response model.
+
+    ``row.status`` is stored as a plain ``str`` in the DB so the table
+    schema can evolve without Alembic, but ``BatchObject.status`` is a
+    ``Literal`` of the five allowed values. A ``cast`` tells mypy that
+    the DB row is trusted to hold a valid status value (enforced by
+    the only places that write it: ``create_batch`` and the poller).
+    """
     return BatchObject(
         id=row.id,
         model=row.model,
-        status=row.status,  # type: ignore[arg-type] — Literal is a subset
+        status=cast("BatchStatus", row.status),
         created_at=_to_unix(row.created_at),
         completed_at=_to_unix(row.completed_at) if row.completed_at else None,
         request_counts=RequestCounts(
@@ -115,9 +129,7 @@ async def create_batch(
     #    Done before the DB insert so if this fails the row is never
     #    created — nothing to clean up.
     input_items = [item.model_dump() for item in request.input]
-    input_path = await storage.write_inputs_jsonl(
-        Path(settings.RESULTS_DIR), batch_id, input_items
-    )
+    input_path = await storage.write_inputs_jsonl(Path(settings.RESULTS_DIR), batch_id, input_items)
 
     # 2. Persist the row in queued state. If the DB insert fails the
     #    storage file is orphaned on disk but that's just disk — the
@@ -295,7 +307,7 @@ async def _mark_failed(batch_id: str, error: str) -> None:
             return
         row.status = "failed"
         row.error = error
-        row.completed_at = _dt.datetime.now(_dt.timezone.utc)
+        row.completed_at = _dt.datetime.now(_dt.UTC)
 
 
 async def _attach_ray_job_id(batch_id: str, ray_job_id: str) -> None:
@@ -340,13 +352,11 @@ async def poll_active_batches() -> None:
             continue
         try:
             await _poll_one(row.id, row.ray_job_id, row.input_count, results_root)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.warning("poller: failed to update %s: %s", row.id, exc)
 
 
-async def _poll_one(
-    batch_id: str, ray_job_id: str, input_count: int, results_root: Path
-) -> None:
+async def _poll_one(batch_id: str, ray_job_id: str, input_count: int, results_root: Path) -> None:
     """Update one batch row from its current Ray state."""
     new_status = await ray_client.get_status(ray_job_id)
 
@@ -357,7 +367,7 @@ async def _poll_one(
         return
 
     # Terminal state → read markers for accurate counts/error.
-    now_utc = _dt.datetime.now(_dt.timezone.utc)
+    now_utc = _dt.datetime.now(_dt.UTC)
 
     if new_status == "completed":
         marker = storage.read_success_marker(results_root, batch_id)
@@ -373,9 +383,7 @@ async def _poll_one(
             )
     elif new_status == "failed":
         marker = storage.read_failure_marker(results_root, batch_id)
-        error_message = (
-            marker.get("error") if marker else "Ray job failed (no marker)"
-        )
+        error_message = marker.get("error") if marker else "Ray job failed (no marker)"
         await _apply_terminal(batch_id, "failed", error_message, now_utc)
     else:  # cancelled
         await _apply_terminal(batch_id, "cancelled", None, now_utc)
@@ -390,7 +398,7 @@ async def _update_status_only(batch_id: str, new_status: str) -> None:
 
 async def _apply_success(
     batch_id: str,
-    marker: dict,
+    marker: dict[str, Any],
     completed_at: _dt.datetime,
 ) -> None:
     async with db.session_scope() as session:
@@ -430,7 +438,7 @@ async def _poller_loop(interval_seconds: float) -> None:
             await poll_active_batches()
         except asyncio.CancelledError:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.error("poller: sweep raised: %s", exc)
         await asyncio.sleep(interval_seconds)
 
@@ -451,7 +459,5 @@ async def stop_status_poller(task: asyncio.Task[None]) -> None:
     app lifespan shutdown path.
     """
     task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await task
-    except asyncio.CancelledError:
-        pass

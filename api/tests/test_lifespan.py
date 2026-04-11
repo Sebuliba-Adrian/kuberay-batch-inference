@@ -29,9 +29,7 @@ class _LifespanFakeRay:
     def __init__(self, address: str) -> None:
         self.address = address
 
-    def submit_job(
-        self, *, entrypoint: str, runtime_env: Any = None
-    ) -> str:
+    def submit_job(self, *, entrypoint: str, runtime_env: Any = None) -> str:
         return "raysubmit_lifespan"
 
     def get_job_status(self, _sid: str) -> str:

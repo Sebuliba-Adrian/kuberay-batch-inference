@@ -47,7 +47,7 @@ async def ready() -> Any:
     side-effect free at import (matters for tests that monkeypatch
     db.ping or ray_client.ping before the first request).
     """
-    from .. import db, ray_client  # noqa: PLC0415
+    from src import db, ray_client  # noqa: PLC0415
 
     checks: dict[str, str] = {}
     overall_ok = True
@@ -56,7 +56,7 @@ async def ready() -> Any:
     try:
         await db.ping()
         checks["postgres"] = "ok"
-    except Exception as exc:  # noqa: BLE001 — defensive wrap
+    except Exception as exc:
         log.warning("ready: postgres check failed: %s", exc)
         checks["postgres"] = f"error: {type(exc).__name__}"
         overall_ok = False
@@ -65,7 +65,7 @@ async def ready() -> Any:
     try:
         await ray_client.ping()
         checks["ray"] = "ok"
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("ready: ray check failed: %s", exc)
         checks["ray"] = f"error: {type(exc).__name__}"
         overall_ok = False
@@ -73,7 +73,5 @@ async def ready() -> Any:
     payload = {"status": "ok" if overall_ok else "degraded", "checks": checks}
     return JSONResponse(
         content=payload,
-        status_code=(
-            status.HTTP_200_OK if overall_ok else status.HTTP_503_SERVICE_UNAVAILABLE
-        ),
+        status_code=(status.HTTP_200_OK if overall_ok else status.HTTP_503_SERVICE_UNAVAILABLE),
     )

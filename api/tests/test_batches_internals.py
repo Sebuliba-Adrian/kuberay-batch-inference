@@ -10,8 +10,9 @@ directly at the function level.
 from __future__ import annotations
 
 import datetime as _dt
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 import pytest
 
@@ -30,7 +31,7 @@ def test_to_unix_with_tz_aware_datetime_passes_through() -> None:
     """A tz-aware datetime (Postgres path) must not be mutated."""
     from src.routes.batches import _to_unix
 
-    aware = _dt.datetime(2026, 1, 1, 0, 0, 0, tzinfo=_dt.timezone.utc)
+    aware = _dt.datetime(2026, 1, 1, 0, 0, 0, tzinfo=_dt.UTC)
     assert _to_unix(aware) == 1_767_225_600
 
 
@@ -88,9 +89,7 @@ async def test_mark_failed_logs_and_returns_when_row_missing(
     caplog.set_level(logging.ERROR, logger="src.routes.batches")
     await _mark_failed("batch_does_not_exist", "boom")
 
-    assert any(
-        "row not found" in record.message for record in caplog.records
-    )
+    assert any("row not found" in record.message for record in caplog.records)
 
 
 async def test_attach_ray_job_id_logs_and_returns_when_row_missing(
@@ -104,9 +103,7 @@ async def test_attach_ray_job_id_logs_and_returns_when_row_missing(
     caplog.set_level(logging.ERROR, logger="src.routes.batches")
     await _attach_ray_job_id("batch_does_not_exist", "raysubmit_x")
 
-    assert any(
-        "row not found" in record.message for record in caplog.records
-    )
+    assert any("row not found" in record.message for record in caplog.records)
 
 
 # ─── Happy paths of the internal helpers ────────────────────────────
@@ -175,7 +172,6 @@ async def test_create_batch_returns_500_when_refreshed_row_vanishes(
     with AttributeError.
     """
     from fastapi import HTTPException
-
     from src import db, ray_client  # noqa: PLC0415
     from src.models import BatchInputItem, CreateBatchRequest  # noqa: PLC0415
     from src.routes import batches as batches_mod  # noqa: PLC0415
@@ -185,8 +181,10 @@ async def test_create_batch_returns_500_when_refreshed_row_vanishes(
         def __init__(self, address: str) -> None: ...
         def submit_job(self, *, entrypoint: str, runtime_env: Any = None) -> str:
             return "raysubmit_test"
+
         def get_job_status(self, _sid: str) -> str:
             return "PENDING"
+
         def list_jobs(self) -> list[Any]:
             return []
 

@@ -58,7 +58,6 @@ def test_create_app_deferred_settings_raise_inside_lifespan(
     enter the lifespan inside the test body.
     """
     from pydantic import ValidationError
-
     from src.main import create_app, lifespan
 
     app = create_app()  # factory is pure — no raise
@@ -74,9 +73,7 @@ def test_create_app_deferred_settings_raise_inside_lifespan(
 
 
 # ─── /health route ──────────────────────────────────────────────────
-async def test_health_endpoint_returns_ok(
-    monkeypatch: pytest.MonkeyPatch, api_key: str
-) -> None:
+async def test_health_endpoint_returns_ok(monkeypatch: pytest.MonkeyPatch, api_key: str) -> None:
     """GET /health returns 200 {'status': 'ok'}."""
     monkeypatch.setenv("API_KEY", api_key)
 
