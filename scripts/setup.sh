@@ -12,7 +12,10 @@
 set -euo pipefail
 
 # ─── Versions ───────────────────────────────────────────────────────────
-KIND_VERSION="${KIND_VERSION:-v0.24.0}"
+# Pins verified 2026-04: kind maintains wide backward compat on node
+# images, so a newer kind binary still boots the v1.29.4 node image
+# pinned in k8s/kind/kind-config.yaml.
+KIND_VERSION="${KIND_VERSION:-v0.27.0}"
 KUBECTL_VERSION="${KUBECTL_VERSION:-v1.29.4}"
 HELM_VERSION="${HELM_VERSION:-v3.15.3}"
 

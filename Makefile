@@ -6,7 +6,7 @@
 SHELL := /bin/bash
 
 # ─── Versions ────────────────────────────────────────────────────────
-KIND_VERSION            ?= v0.24.0
+KIND_VERSION            ?= v0.27.0
 K8S_VERSION             ?= v1.29.4
 KUBERAY_VERSION         ?= 1.6.0
 RAY_VERSION             ?= 2.54.1

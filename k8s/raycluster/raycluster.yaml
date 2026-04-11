@@ -77,7 +77,13 @@ spec:
 
   # ── Head pod ──
   headGroupSpec:
-    serviceType: NodePort
+    # ClusterIP for the auto-created head-svc — the FastAPI pod reaches
+    # it via in-cluster DNS at qwen-raycluster-head-svc.ray.svc.cluster.local.
+    # Host exposure of the dashboard is handled separately by the
+    # qwen-raycluster-dashboard-np NodePort Service at the bottom of
+    # this file, so pinning NodePort here would waste a port from the
+    # 30000-32767 range for nothing.
+    serviceType: ClusterIP
     rayStartParams:
       dashboard-host: "0.0.0.0"
       # num-cpus=0 keeps the head as a pure scheduler. All inference
@@ -114,10 +120,6 @@ spec:
                 value: "1"
               - name: TRANSFORMERS_OFFLINE
                 value: "0"
-              # Ray's dashboard agent needs this explicitly enabled
-              # under KubeRay's pod lifecycle or it will log noisily.
-              - name: RAY_enable_pipelining
-                value: "1"
             volumeMounts:
               - name: batches
                 mountPath: /data/batches
