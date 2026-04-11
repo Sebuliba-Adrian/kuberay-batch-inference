@@ -1,0 +1,27 @@
+# Normalize line endings across Windows / macOS / Linux checkouts.
+# Shell scripts, YAML, Dockerfiles, and Python must be LF — otherwise
+# `./scripts/foo.sh` fails on Linux with /bin/bash^M: bad interpreter.
+
+* text=auto eol=lf
+
+*.sh            text eol=lf
+*.bash          text eol=lf
+*.py            text eol=lf
+*.yaml          text eol=lf
+*.yml           text eol=lf
+*.toml          text eol=lf
+*.json          text eol=lf
+*.md            text eol=lf
+Dockerfile      text eol=lf
+Makefile        text eol=lf
+LICENSE         text eol=lf
+
+# Binary files — do not touch
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.pdf           binary
+*.woff          binary
+*.woff2         binary
+*.ttf           binary
