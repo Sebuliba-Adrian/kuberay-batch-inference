@@ -1,0 +1,20 @@
+# Ray worker runtime deps for CPU-only Qwen2.5-0.5B inference.
+#
+# Pins align with docs/ARCHITECTURE.md §4 version matrix. The CPU Torch
+# index URL keeps the image small (~1 GB instead of ~4 GB with CUDA libs).
+
+--index-url https://pypi.org/simple
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Model runtime
+torch==2.3.1+cpu
+transformers>=4.45,<5
+accelerate>=0.34,<1
+safetensors>=0.4.5
+
+# HF hub (for snapshot_download during image build)
+huggingface_hub>=0.25,<1
+
+# Tokenizer deps — required by Qwen2.5's tokenizer
+sentencepiece>=0.2.0
+protobuf>=4.25
