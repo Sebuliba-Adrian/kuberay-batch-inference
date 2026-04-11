@@ -1,0 +1,150 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-flight runs when a new push lands on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Default to read-only permissions; jobs that need more opt in.
+permissions:
+  contents: read
+
+jobs:
+  # ─── API: lint + typecheck + test + coverage ──────────────────────
+  api:
+    name: api (lint + typecheck + test)
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.8"
+          enable-cache: true
+          cache-dependency-glob: "api/pyproject.toml"
+
+      - name: Create venv and install deps
+        run: |
+          uv venv --python 3.11
+          uv pip install \
+            "fastapi>=0.115,<1" \
+            "uvicorn[standard]>=0.32,<1" \
+            "pydantic>=2.8,<3" \
+            "pydantic-settings>=2.5,<3" \
+            "sqlalchemy[asyncio]>=2.0.30,<3" \
+            "aiosqlite>=0.20,<1" \
+            "aiofiles>=24.1,<25" \
+            "python-ulid>=3.0,<4" \
+            "orjson>=3.10,<4" \
+            "httpx>=0.27,<1" \
+            "pytest>=8.3,<9" \
+            "pytest-asyncio>=0.24,<1" \
+            "pytest-cov>=5.0,<6" \
+            "anyio>=4.4,<5" \
+            "ruff>=0.6,<1" \
+            "mypy>=1.11,<2" \
+            "types-aiofiles"
+
+      - name: Lint (ruff)
+        run: uv run ruff check src tests
+
+      - name: Format check (ruff format --check)
+        run: uv run ruff format --check src tests
+
+      - name: Type check (mypy)
+        # Tests are loosely typed on purpose; strict mypy runs on src.
+        run: uv run mypy src
+
+      - name: Unit + integration tests
+        run: |
+          uv run pytest tests \
+            --cov=src \
+            --cov-branch \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-fail-under=100
+
+      - name: Upload coverage.xml artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: api/coverage.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ─── Validate k8s manifests with kubeconform ──────────────────────
+  k8s:
+    name: k8s (kubeconform)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -fsSL -o /tmp/kubeconform.tar.gz \
+            https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp
+          sudo mv /tmp/kubeconform /usr/local/bin/
+
+      - name: Validate manifests
+        # Skip the RayCluster CRD since it lives outside the bundled
+        # k8s OpenAPI schemas — kubeconform would otherwise fail on
+        # the unknown kind. We verify the RayCluster manifest shape
+        # in the e2e smoke test on a real kind cluster.
+        run: |
+          kubeconform \
+            -strict \
+            -summary \
+            -skip RayCluster \
+            -ignore-missing-schemas \
+            k8s/api/ \
+            k8s/postgres/ \
+            k8s/storage/
+
+  # ─── Build Docker images (sanity check they compile) ─────────────
+  docker:
+    name: docker (image build sanity)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build api image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: api
+          file: api/Dockerfile
+          push: false
+          tags: local/batch-api:ci
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      # Ray worker image build takes 5-10 minutes in CI because it
+      # downloads torch + transformers + Qwen weights. Skip on PRs,
+      # run on push to main.
+      - name: Build inference image (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: inference
+          file: inference/Dockerfile
+          push: false
+          tags: local/ray-worker:ci
+          cache-from: type=gha,scope=inference
+          cache-to: type=gha,scope=inference,mode=max
