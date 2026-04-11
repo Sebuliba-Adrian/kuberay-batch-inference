@@ -126,16 +126,21 @@ spec:
               - name: hf-cache
                 mountPath: /home/ray/.cache/huggingface
             readinessProbe:
+              # Ray 2.54 disables the Ray Client server by default (deprecated
+              # in favor of the Jobs API, which JobSubmissionClient uses). So
+              # we health-check GCS generally, not ray_client_server_handle.
               exec:
-                command: ["bash", "-c", "ray health-check --component ray_client_server_handle"]
+                command: ["bash", "-c", "ray health-check"]
               initialDelaySeconds: 10
               periodSeconds: 5
+              timeoutSeconds: 15
               failureThreshold: 60
             livenessProbe:
               exec:
                 command: ["bash", "-c", "ray health-check"]
               initialDelaySeconds: 30
               periodSeconds: 30
+              timeoutSeconds: 15
               failureThreshold: 5
         volumes:
           - name: batches
@@ -194,6 +199,23 @@ spec:
                   mountPath: /data/batches
                 - name: hf-cache
                   mountPath: /home/ray/.cache/huggingface
+              # Explicit probes override KubeRay's auto-injected dashboard-agent
+              # probes, which default to timeoutSeconds:1 and fail under CPU
+              # contention while the worker is still booting Ray.
+              readinessProbe:
+                exec:
+                  command: ["bash", "-c", "ray health-check"]
+                initialDelaySeconds: 30
+                periodSeconds: 10
+                timeoutSeconds: 15
+                failureThreshold: 30
+              livenessProbe:
+                exec:
+                  command: ["bash", "-c", "ray health-check"]
+                initialDelaySeconds: 60
+                periodSeconds: 30
+                timeoutSeconds: 15
+                failureThreshold: 5
           volumes:
             - name: batches
               persistentVolumeClaim:
