@@ -23,13 +23,14 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from ulid import ULID
 
 from .. import db, ray_client, storage
 from ..auth import require_api_key
 from ..config import Settings, get_settings
 from ..db import Batch
-from ..models import BatchObject, CreateBatchRequest, RequestCounts
+from ..models import TERMINAL_STATUSES, BatchObject, CreateBatchRequest, RequestCounts
 
 log = logging.getLogger(__name__)
 
@@ -195,6 +196,81 @@ async def get_batch_status(batch_id: str) -> BatchObject:
             detail=f"Batch not found: {batch_id}",
         )
     return _batch_row_to_object(row)
+
+
+# ─── GET /v1/batches/{batch_id}/results ─────────────────────────────
+@router.get(
+    "/batches/{batch_id}/results",
+    summary="Stream the batch inference results as NDJSON",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "content": {"application/x-ndjson": {}},
+            "description": "Batch results as newline-delimited JSON.",
+        },
+        404: {"description": "Batch not found"},
+        409: {"description": "Batch exists but has not completed yet"},
+    },
+)
+async def get_batch_results(
+    batch_id: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> StreamingResponse:
+    """
+    Stream the contents of /data/batches/<id>/results.jsonl back to
+    the caller one line at a time. Uses application/x-ndjson so
+    clients can parse incrementally without loading the whole body
+    into memory.
+
+    Returns:
+        200 with the file contents streamed as NDJSON.
+        404 if the batch row does not exist.
+        409 if the batch exists but status != "completed".
+        500 if the status says completed but the file is missing.
+    """
+    # 1. Look up the batch row first — if it doesn't exist we owe the
+    # caller a 404 before ever touching the filesystem.
+    async with db.session_scope() as session:
+        row = await db.get_batch(session, batch_id)
+
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Batch not found: {batch_id}",
+        )
+
+    # 2. Refuse to stream results for a batch that hasn't finished.
+    # "completed" is the only state that has a valid results file;
+    # failed / cancelled batches expose their error via the status
+    # endpoint, not the results endpoint.
+    if row.status != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Batch not complete (status={row.status})",
+        )
+
+    # 3. Double-check the file exists before returning a StreamingResponse;
+    # if we let the generator fail lazily the HTTP status would already
+    # be 200 and the client would see a mid-stream crash. Surface the
+    # inconsistency as a 500 up-front instead.
+    root = Path(settings.RESULTS_DIR)
+    if not (storage.batch_dir(root, batch_id) / storage.RESULTS_FILENAME).exists():
+        log.error(
+            "get_batch_results: status=completed but results file missing for %s",
+            batch_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Results file missing",
+        )
+
+    # 4. Wrap the async file iterator in a StreamingResponse. FastAPI
+    # consumes the generator lazily, so memory stays flat regardless
+    # of how many rows are in the file.
+    return StreamingResponse(
+        storage.iter_results_ndjson(root, batch_id),
+        media_type="application/x-ndjson",
+    )
 
 
 # ─── Internal helpers ───────────────────────────────────────────────
