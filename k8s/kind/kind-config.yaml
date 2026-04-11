@@ -1,0 +1,56 @@
+# Local Kubernetes cluster definition for the KubeRay Batch Inference demo.
+#
+# Single control-plane node (which is also allowed to run workloads) keeps the
+# resource budget under control on a laptop — Ray "workers" are pods scheduled
+# on this node, not extra kind nodes.
+#
+# extraPortMappings expose:
+#   host:8000  -> NodePort 30800 (FastAPI proxy)
+#   host:8265  -> NodePort 30826 (Ray dashboard + Jobs API)
+#
+# extraMounts give the shared PVC a hostPath-backed directory so both the API
+# pod and every Ray worker pod can read/write the same `/data/batches` tree.
+# Without this, the default `standard` StorageClass is ReadWriteOnce only and
+# multi-pod writes would collide.
+#
+# Reference: https://kind.sigs.k8s.io/docs/user/configuration/
+
+apiVersion: kind.x-k8s.io/v1alpha4
+kind: Cluster
+name: kuberay-dev
+
+networking:
+  # API server listens on 0.0.0.0 so kubectl from the host works without
+  # further port mapping on the control plane.
+  apiServerAddress: "127.0.0.1"
+
+nodes:
+  - role: control-plane
+    # Pin the node image to a specific k8s version for reproducibility.
+    # Bump via KIND_NODE_IMAGE in the Makefile if a newer patch is desired.
+    image: kindest/node:v1.29.4
+
+    # Host-to-cluster port forwarding.
+    # NodePort services in k8s default to the 30000-32767 range. We pin
+    # deterministic nodePorts in the API and Ray head manifests so these
+    # mappings are stable across restarts.
+    extraPortMappings:
+      - containerPort: 30800
+        hostPort: 8000
+        protocol: TCP
+        listenAddress: "127.0.0.1"
+      - containerPort: 30826
+        hostPort: 8265
+        protocol: TCP
+        listenAddress: "127.0.0.1"
+
+    # Shared host directory mounted into the node. The PVC created by
+    # k8s/storage/shared-pvc.yaml binds to this path via a hostPath PV,
+    # giving all pods on the node a common read/write mount point.
+    #
+    # IMPORTANT: the host path below must exist before `kind create cluster`
+    # or kind silently creates it with root ownership. `make cluster-up`
+    # (via scripts/up.sh) pre-creates it.
+    extraMounts:
+      - hostPath: /tmp/kuberay-batch-inference/data
+        containerPath: /mnt/data
