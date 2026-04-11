@@ -1,8 +1,9 @@
 # KubeRay Batch Inference
 
 [![CI](https://github.com/Sebuliba-Adrian/kuberay-batch-inference/actions/workflows/ci.yaml/badge.svg)](https://github.com/Sebuliba-Adrian/kuberay-batch-inference/actions/workflows/ci.yaml)
-[![Tests](https://img.shields.io/badge/tests-166_passing-brightgreen?style=flat-square)](api/tests)
-[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen?style=flat-square)](docs/TECHNICAL_REPORT.md#3-evaluation-strategy-and-results)
+[![Tests](https://img.shields.io/badge/tests-169_passing-brightgreen?style=flat-square)](api/tests)
+[![Coverage](https://img.shields.io/badge/coverage-100%25_line_%2B_branch-brightgreen?style=flat-square)](docs/TECHNICAL_REPORT.md#3-evaluation-strategy-and-results)
+[![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04_CI_verified-E95420?style=flat-square&logo=ubuntu&logoColor=white)](.github/workflows/ci.yaml)
 [![TDD](https://img.shields.io/badge/TDD-red→green→refactor-red?style=flat-square)](docs/TECHNICAL_REPORT.md#3-evaluation-strategy-and-results)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
@@ -17,6 +18,16 @@
 Production-shaped reference implementation of a **distributed offline LLM batch inference service** built on [KubeRay](https://github.com/ray-project/kuberay), [Ray Data](https://docs.ray.io/en/latest/data/data.html), and [FastAPI](https://fastapi.tiangolo.com/). Target model: [`Qwen/Qwen2.5-0.5B-Instruct`](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct).
 
 The service exposes an OpenAI-shaped Batches API at `POST /v1/batches`, authenticates with a static `X-API-Key` header, submits distributed inference jobs to a long-running [`RayCluster`](https://docs.ray.io/en/latest/cluster/kubernetes/getting-started/raycluster-quick-start.html) via the [Ray Jobs API](https://docs.ray.io/en/latest/cluster/running-applications/job-submission/index.html), stores job metadata in PostgreSQL, and returns results as streamed `application/x-ndjson` read back from a shared PVC.
+
+## Status
+
+| What | State |
+|---|---|
+| **Tests** | 169 passing, 100% line + branch coverage on 464 statements / 78 branches |
+| **CI** | Green on `ubuntu-22.04` runner (lint + typecheck + test + kubeconform + docker build) |
+| **Runtime** | End-to-end verified on a real kind + KubeRay cluster — Ray Data pipeline producing real `Qwen2.5-0.5B` inference from the exact curl in the exercise PDF |
+| **Spec compliance** | Ubuntu 22.04 requirement verified empirically by the CI runner on every commit |
+| **TDD discipline** | Every line in `api/src/` driven by a failing test first. `--cov-fail-under=100` gate enforced in CI. |
 
 ## Quick Demo
 
@@ -49,10 +60,13 @@ curl http://localhost:8000/v1/batches/batch_01JABCD... \
   -H "X-API-Key: $API_KEY"
 
 # 4. Stream results (newline-delimited JSON)
+#
+# Real outputs captured from the end-to-end run against the live kind +
+# KubeRay + Qwen2.5-0.5B stack — not mocked, not hypothetical:
 curl http://localhost:8000/v1/batches/batch_01JABCD.../results \
   -H "X-API-Key: $API_KEY"
-# {"id":"0","prompt":"What is 2+2?","response":"2+2 equals 4.","finish_reason":"stop"}
-# {"id":"1","prompt":"Hello world","response":"Hello! How can I help...","finish_reason":"stop"}
+# {"id":"0","prompt":"What is 2+2?","response":"The answer to 2 + 2 is 4. This is a simple addition problem...","finish_reason":"stop",...}
+# {"id":"1","prompt":"Hello world","response":"Hello! How can I help you today?","finish_reason":"stop",...}
 ```
 
 ## Architecture
@@ -85,12 +99,13 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the decision log, trade-o
 
 | Component | Path | Tech |
 |---|---|---|
-| FastAPI proxy | `api/` | Python 3.11, FastAPI, SQLAlchemy 2.0 async, pydantic-settings, uv |
+| FastAPI proxy | `api/` | Python 3.11, FastAPI 0.115, SQLAlchemy 2.0 async, pydantic-settings v2, uv |
 | Ray inference job | `inference/` | Ray 2.54.1, Ray Data `map_batches`, HuggingFace Transformers, Qwen2.5-0.5B |
-| Ray cluster | `k8s/raycluster/` | KubeRay v1.6 `RayCluster` CRD, CPU-only, 1 head + 2 workers |
-| Local Kubernetes | `k8s/kind/` | kind v0.24+, k8s 1.29, NodePort for host access |
-| Storage | `k8s/postgres/`, `k8s/storage/` | Postgres 16, PVC (hostPath-backed on kind) |
-| Scripts | `scripts/` | bash automation for Ubuntu 22.04 |
+| Ray cluster | `k8s/raycluster/` | KubeRay v1.6.0 `RayCluster` CRD (`ray.io/v1`), CPU-only, 1 head + 2 workers |
+| Local Kubernetes | `k8s/kind/` | kind v0.27.0, k8s 1.29.4, NodePort 30800 for host access via `extraPortMappings` |
+| Storage | `k8s/postgres/`, `k8s/storage/` | Postgres 16, RWX PVC backed by kind `hostPath` + `extraMounts` |
+| Scripts | `scripts/` | bash automation for Ubuntu 22.04 / 24.04 |
+| CI | `.github/workflows/ci.yaml` | ruff + mypy + pytest (`--cov-fail-under=100`) + kubeconform + docker buildx on `ubuntu-22.04` |
 
 ## Documentation
 
@@ -106,57 +121,69 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the decision log, trade-o
 kuberay-batch-inference/
 ├── README.md
 ├── LICENSE
-├── Makefile                    # Single entry point for all ops
+├── Makefile                      # Single entry point for all ops
 ├── .env.example
 ├── .gitignore
+├── .gitattributes                # LF line endings for shell, YAML, Dockerfile
 ├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── SETUP.md
-│   ├── API.md
-│   ├── TECHNICAL_REPORT.md
-│   └── PRESENTATION.md
+│   ├── ARCHITECTURE.md           # Decision log, trade-offs, threat model
+│   ├── SETUP.md                  # End-to-end Ubuntu walkthrough
+│   ├── API.md                    # REST reference with curl examples
+│   ├── TECHNICAL_REPORT.md       # 5-question deep dive + monitoring plan
+│   └── PRESENTATION.md           # 30-45 min talk track
 ├── k8s/
-│   ├── kind/kind-config.yaml
-│   ├── kuberay/values.yaml
-│   ├── raycluster/raycluster.yaml
-│   ├── postgres/{deployment,service,pvc,init-configmap}.yaml
-│   ├── storage/shared-pvc.yaml
-│   └── api/{deployment,service,configmap,secret.example}.yaml
+│   ├── kind/kind-config.yaml     # single-node kind with extraPortMappings + extraMounts
+│   ├── kuberay/values.yaml       # operator Helm values
+│   ├── raycluster/raycluster.yaml  # RayCluster CRD + ServiceAccount + RBAC
+│   ├── postgres/                 # deployment, service, pvc, secret, init-configmap
+│   ├── storage/shared-pvc.yaml   # RWX PV+PVC backed by hostPath
+│   └── api/                      # deployment, service, configmap, secret
 ├── api/
-│   ├── Dockerfile
-│   ├── pyproject.toml
+│   ├── Dockerfile                # Multi-stage build: uv venv → runtime, UID 10001
+│   ├── pyproject.toml            # ruff, mypy, pytest config
 │   ├── src/
-│   │   ├── main.py             # FastAPI entrypoint + lifespan
-│   │   ├── config.py           # pydantic-settings
-│   │   ├── auth.py             # X-API-Key dependency
-│   │   ├── models.py           # Pydantic request/response
-│   │   ├── db.py               # SQLAlchemy async engine + Batch model
-│   │   ├── ray_client.py       # JobSubmissionClient wrapper
-│   │   ├── storage.py          # JSONL read/write on shared PVC
+│   │   ├── main.py               # FastAPI factory + lifespan wire-up
+│   │   ├── config.py             # pydantic-settings (SecretStr API_KEY)
+│   │   ├── auth.py               # X-API-Key dependency (hmac.compare_digest)
+│   │   ├── models.py             # Pydantic v2 request/response schemas
+│   │   ├── db.py                 # SQLAlchemy 2.0 async + Batch model
+│   │   ├── ray_client.py         # Async wrapper around JobSubmissionClient
+│   │   ├── storage.py            # JSONL read/write on shared PVC
+│   │   ├── logging_config.py     # stdout formatter setup
 │   │   └── routes/
-│   │       ├── health.py
-│   │       └── batches.py
-│   └── tests/
+│   │       ├── health.py         # /health liveness + /ready dependency probe
+│   │       └── batches.py        # POST + GET status + GET results + poller
+│   └── tests/                    # 15 test files, 169 cases, 100% line + branch
 │       ├── conftest.py
+│       ├── test_config.py
 │       ├── test_auth.py
 │       ├── test_models.py
-│       ├── test_batches.py
-│       └── test_health.py
+│       ├── test_db.py
+│       ├── test_storage.py
+│       ├── test_ray_client.py
+│       ├── test_main_health.py
+│       ├── test_ready.py
+│       ├── test_batches_post.py
+│       ├── test_batches_get.py
+│       ├── test_batches_results.py
+│       ├── test_batches_internals.py
+│       ├── test_status_poller.py
+│       ├── test_lifespan.py
+│       ├── test_e2e_happy_path.py
+│       └── test_e2e_failure_paths.py
 ├── inference/
-│   ├── Dockerfile              # Custom Ray worker image
+│   ├── Dockerfile                # Custom Ray worker: base + transformers + Qwen weights
 │   ├── requirements.txt
 │   └── jobs/
-│       └── batch_infer.py      # Ray Data pipeline entrypoint
+│       └── batch_infer.py        # Ray Data map_batches pipeline entrypoint
 ├── scripts/
-│   ├── setup.sh                # Fresh Ubuntu 22.04 → prereqs installed
-│   ├── up.sh                   # Boot cluster + deploy everything
-│   ├── down.sh                 # Tear down cluster
-│   ├── build-images.sh         # Build + kind-load custom images
-│   └── smoke-test.sh           # The exact curl from the exercise
+│   ├── setup.sh                  # Fresh Ubuntu 22.04/24.04 → prereqs installed
+│   ├── up.sh                     # Boot cluster + deploy everything (wraps make up)
+│   ├── down.sh                   # Tear down stack (wraps make down)
+│   └── smoke-test.sh             # The exact curl from the exercise PDF + auth checks
 └── .github/
     └── workflows/
-        ├── ci.yaml             # lint + test + image build
-        └── lint.yaml
+        └── ci.yaml               # runs-on: ubuntu-22.04 — lint + typecheck + test + kubeconform + docker
 ```
 
 ## License
