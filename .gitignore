@@ -1,0 +1,92 @@
+# ─── Python ──────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ─── Virtual environments ────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# ─── uv ─────────────────────────────────────────────────────────────
+# keep uv.lock in repo; ignore uv cache
+.uv-cache/
+
+# ─── Testing / coverage ──────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# ─── Linting / typing ────────────────────────────────────────────────
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.pytype/
+
+# ─── Secrets / env ───────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# ─── Kubernetes / Helm ───────────────────────────────────────────────
+kubeconfig
+*.kubeconfig
+charts/*/charts/
+charts/*/Chart.lock
+
+# ─── Docker ──────────────────────────────────────────────────────────
+docker-compose.override.yaml
+
+# ─── IDE / editor ────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ─── Ray / HuggingFace caches ────────────────────────────────────────
+.ray/
+ray_results/
+.cache/huggingface/
+hf_cache/
+models/
+
+# ─── Local data / outputs ────────────────────────────────────────────
+/data/
+/results/
+*.jsonl.local
+tmp/
