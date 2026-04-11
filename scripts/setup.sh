@@ -47,7 +47,7 @@ install_apt_packages() {
   sudo apt-get install -y --no-install-recommends \
     ca-certificates curl gnupg lsb-release \
     jq make build-essential git \
-    python3.11 python3.11-venv python3-pip
+    python3 python3-venv python3-pip
 }
 
 # ─── 2. Docker ──────────────────────────────────────────────────────────
