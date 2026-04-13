@@ -23,6 +23,7 @@ dependencies = [
     "python-ulid>=3.0,<4",
     "httpx>=0.27,<1",
     "orjson>=3.10,<4",
+    "prometheus-client>=0.20,<1",
 ]
 
 [project.optional-dependencies]

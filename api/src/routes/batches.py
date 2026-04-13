@@ -39,6 +39,12 @@ from src.models import (
     CreateBatchRequest,
     RequestCounts,
 )
+from src.observability import (
+    batch_id_var,
+    batch_submitted_total,
+    batch_terminal_total,
+    rayjob_submit_failures_total,
+)
 
 # Default interval between poller sweeps. Overridable via start_status_poller
 # for tests that want a tighter loop.
@@ -123,6 +129,7 @@ async def create_batch(
     client received 503.
     """
     batch_id = _new_batch_id()
+    batch_id_var.set(batch_id)
     log.info("create_batch: id=%s prompts=%d", batch_id, len(request.input))
 
     # 1. Write inputs to the shared PVC so Ray workers can read them.
@@ -162,6 +169,7 @@ async def create_batch(
         )
     except (ConnectionError, RuntimeError) as exc:
         log.warning("create_batch: ray submit failed for %s: %s", batch_id, exc)
+        rayjob_submit_failures_total.labels(type(exc).__name__).inc()
         await _mark_failed(batch_id, f"Ray submission failed: {type(exc).__name__}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -171,6 +179,7 @@ async def create_batch(
     # 4. Update the row with the Ray submission id so the status poller
     #    can find it later.
     await _attach_ray_job_id(batch_id, ray_job_id)
+    batch_submitted_total.labels(request.model).inc()
 
     # 5. Build the response from a fresh read so created_at comes from
     #    the database clock, not the Python process clock.
@@ -418,6 +427,7 @@ async def _apply_success(
         row.completed_count = int(marker.get("completed", 0))
         row.failed_count = int(marker.get("failed", 0))
         row.completed_at = completed_at
+        batch_terminal_total.labels(row.model, "completed").inc()
 
 
 async def _apply_terminal(
@@ -433,6 +443,7 @@ async def _apply_terminal(
         row.status = new_status
         row.error = error
         row.completed_at = completed_at
+        batch_terminal_total.labels(row.model, new_status).inc()
 
 
 # ─── Poller lifecycle ───────────────────────────────────────────────

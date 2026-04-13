@@ -60,7 +60,8 @@ RUN uv venv /app/.venv --python 3.11 \
       "aiofiles>=24.1,<25" \
       "ray[default]==2.54.1" \
       "python-ulid>=3.0,<4" \
-      "orjson>=3.10,<4"
+      "orjson>=3.10,<4" \
+      "prometheus-client>=0.20,<1"
 
 # ─── Runtime stage ─────────────────────────────────────────────────
 FROM python:3.11-slim AS runtime

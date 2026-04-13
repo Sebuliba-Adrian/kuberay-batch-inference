@@ -194,7 +194,33 @@ The everything-at-once verification: runs the exact spec curl, both auth negativ
 make smoke-test
 ```
 
-### 10. (Optional) Monitoring - Prometheus + Grafana + Ray dashboards
+### 10. Observability: `/metrics` and structured logs
+
+The FastAPI proxy exposes Prometheus metrics at `/metrics` (no auth required, cheap to scrape):
+
+```bash
+curl -s http://localhost:8000/metrics | grep -E "^(http_requests_total|batch_submitted_total|batch_terminal_total)" | head
+```
+
+You get:
+
+- `http_requests_total{method,path,status}` - HTTP request counter
+- `http_request_duration_seconds{method,path}` - request latency histogram
+- `batch_submitted_total{model}` - batches accepted
+- `batch_terminal_total{model,status}` - batches that reached a terminal state
+- `rayjob_submit_failures_total{reason}` - Ray submit_job errors
+
+Every response carries an `X-Request-ID` header (echoed if the client supplied one, otherwise a `uuid4().hex` is generated) and logs are emitted as one-JSON-object-per-line with `request_id` and `batch_id` context attached.
+
+### 11. Benchmark
+
+A scripted load test that submits a 15-prompt batch, polls until terminal, and reports submit latency, poll latency distribution, wall time, and throughput:
+
+```bash
+python scripts/benchmark.py
+```
+
+### 12. (Optional) Monitoring stack - Prometheus + Grafana + Ray dashboards
 
 Only needed if you want live metrics panels during the demo.
 
@@ -205,7 +231,7 @@ make grafana            # port-forwards Grafana to localhost:3000 (admin/admin)
 
 Then refresh `http://localhost:8265/#/metrics` in the Ray dashboard - the Metrics tab now iframes Grafana panels.
 
-### 11. Tear down
+### 13. Tear down
 
 ```bash
 make down               # remove the app, keep the cluster for fast rebuilds
