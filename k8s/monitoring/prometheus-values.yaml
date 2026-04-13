@@ -82,23 +82,24 @@ extraScrapeConfigs: |
       - source_labels: [__meta_kubernetes_pod_name]
         target_label: instance
 
-  # FastAPI proxy metrics (future - when /metrics endpoint is added via
-  # prometheus-fastapi-instrumentator, this scrape config picks it up).
-  # Commented out because the endpoint isn't wired yet; uncomment when it is.
-  # - job_name: 'batch-api'
-  #   kubernetes_sd_configs:
-  #     - role: pod
-  #       namespaces:
-  #         names:
-  #           - ray
-  #   relabel_configs:
-  #     - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
-  #       action: keep
-  #       regex: batch-api
-  #     - source_labels: [__meta_kubernetes_pod_ip]
-  #       target_label: __address__
-  #       regex: (.+)
-  #       replacement: ${1}:8000
+  # FastAPI proxy metrics. The /metrics endpoint is served by a hand-rolled
+  # middleware in api/src/observability.py built on prometheus_client - no
+  # third-party instrumentator library is involved. This scrape config
+  # picks it up via pod-label selection.
+  - job_name: 'batch-api'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - ray
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        action: keep
+        regex: batch-api
+      - source_labels: [__meta_kubernetes_pod_ip]
+        target_label: __address__
+        regex: (.+)
+        replacement: ${1}:8000
 
 # ─── Service type ─────────────────────────────────────────────────────
 # ClusterIP is enough; we reach Prometheus via kubectl port-forward for

@@ -206,7 +206,7 @@ A background task in the API (`asyncio.create_task` on app startup) polls Ray fo
 
 **How Ray Data distributes work:**
 1. `ray.data.read_json(input.jsonl)` creates a Dataset partitioned into blocks (one per file by default; we repartition to `num_workers * 2` for better parallelism).
-2. `ds.map_batches(QwenPredictor, concurrency=2, batch_size=16)` spins up an actor pool with `concurrency=2` long-lived actors, one per Ray worker pod. Each actor loads Qwen **once** in `__init__` and runs inference on successive batches in `__call__`.
+2. `ds.map_batches(QwenPredictor, concurrency=2, batch_size=8)` spins up an actor pool with `concurrency=2` long-lived actors, one per Ray worker pod. Each actor loads Qwen **once** in `__init__` and runs inference on successive batches in `__call__`. (The input file is pre-repartitioned into `max(2, total // 16)` blocks so Ray has more partitions than actors - that `16` is a block-sizing heuristic, distinct from the UDF's `batch_size`.)
 3. Ray's scheduler places actors using the resource requests declared on the `RayCluster` worker group (CPU in our case; `num_gpus=1` in production).
 4. Blocks are streamed through the pipeline with backpressure - if actors are slow, upstream reads throttle automatically.
 5. Results are written block-by-block to the output Dataset and finally materialized as JSONL.
@@ -252,7 +252,7 @@ A background task in the API (`asyncio.create_task` on app startup) polls Ray fo
 - p95 batch size (prompt count) - shapes the UDF's `batch_size` tuning.
 
 **Instrumentation path:**
-- **FastAPI** exposes `/metrics` via `prometheus-fastapi-instrumentator` (HTTP latency histograms, request counts, in-flight).
+- **FastAPI** exposes `/metrics` via a hand-rolled middleware in `src/observability.py` built directly on `prometheus_client` - a `RequestIdMiddleware` captures HTTP request counts + latency histograms (`http_requests_total`, `http_request_duration_seconds`) and the batch routes increment domain counters (`batch_submitted_total{model}`, `batch_terminal_total{model,status}`, `rayjob_submit_failures_total{reason}`).
 - **Ray** exposes `:8080` on each pod via built-in Prometheus metrics (actor counts, task durations, object store pressure).
 - **Postgres** scraped by `postgres_exporter`.
 - **kube-state-metrics** + **node-exporter** for the cluster layer.
@@ -276,7 +276,7 @@ See `TECHNICAL_REPORT.md` §5 for the full monitoring plan with Grafana dashboar
 6. **Observability integration.** Ray metrics are exposed on `:8080` in Prometheus format; kube-state-metrics and node-exporter cover the pod/node layer. Drop into any existing K8s monitoring stack with no custom glue.
 
 **Limitations:**
-1. **Operator is a single point of failure for reconciliation.** If the KubeRay operator pod goes down, existing RayClusters keep running but you can't create new ones or heal drift. Mitigated with `replicas: 2` and a leader election (KubeRay v1.3+).
+1. **Operator is a single point of failure for reconciliation.** If the KubeRay operator pod goes down, existing RayClusters keep running but you can't create new ones or heal drift. In this repo the operator runs `replicas: 1` (single-instance is the Helm default and fine for a demo); in production I'd bump to `replicas: 2` with leader election, which KubeRay has supported since v1.3.
 2. **Cold-start cost is high.** `RayJob` CRD creating a fresh cluster per job pays the full image-pull + Ray-bootstrap cost (~60-120s on kind). For latency-sensitive APIs you must deploy a long-running `RayCluster` and submit to it (which we do).
 3. **kind-specific pain points** - no LoadBalancer services out of the box (must use NodePort or port-forward), custom images need `kind load docker-image`, storage is `ReadWriteOnce`-only by default (we work around with `hostPath` + `extraMounts`).
 4. **Version compatibility is narrow.** KubeRay v1.6 requires Ray ≥ 2.38; Ray 2.11-2.37 has a dashboard-agent hang bug that breaks readiness probes. You have to read the compatibility matrix before picking versions.
