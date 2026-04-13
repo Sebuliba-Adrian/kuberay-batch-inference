@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # -------------------------------------------------------------------------
-# down.sh — Tear down the full stack, including the kind cluster.
+# down.sh - Tear down the full stack, including the kind cluster.
 #
 # Use `make down` instead if you want to keep the kind cluster alive for
 # faster subsequent restarts.

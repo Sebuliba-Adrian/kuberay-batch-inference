@@ -3,8 +3,8 @@ Red tests for the main app factory, logging config, and /health route.
 
 This cycle stitches three small modules together:
 - src.logging_config.configure_logging()
-- src.main.create_app() — FastAPI factory (no module-level app singleton)
-- src.routes.health.router — /health endpoint
+- src.main.create_app() - FastAPI factory (no module-level app singleton)
+- src.routes.health.router - /health endpoint
 
 The app factory pattern (rather than a module-level `app = FastAPI()`)
 is deliberate: it lets tests build a fresh instance after setting
@@ -27,7 +27,7 @@ def test_create_app_returns_fastapi_instance() -> None:
     """create_app() returns a FastAPI app with title and version set."""
     from src.main import create_app
 
-    # Note: no API_KEY required here — settings are now read lazily
+    # Note: no API_KEY required here - settings are now read lazily
     # inside the lifespan, so the factory itself is pure.
     app = create_app()
     assert isinstance(app, FastAPI)
@@ -52,7 +52,7 @@ def test_create_app_deferred_settings_raise_inside_lifespan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """
-    Missing API_KEY must still fail loudly — but only when the lifespan
+    Missing API_KEY must still fail loudly - but only when the lifespan
     actually runs, not when the factory is called. This is a deliberate
     design choice so test fixtures can build an app, inject fakes, then
     enter the lifespan inside the test body.
@@ -60,7 +60,7 @@ def test_create_app_deferred_settings_raise_inside_lifespan(
     from pydantic import ValidationError
     from src.main import create_app, lifespan
 
-    app = create_app()  # factory is pure — no raise
+    app = create_app()  # factory is pure - no raise
 
     async def _enter_lifespan() -> None:
         async with lifespan(app):
@@ -92,7 +92,7 @@ async def test_health_endpoint_requires_no_auth(
     monkeypatch: pytest.MonkeyPatch, api_key: str
 ) -> None:
     """
-    Health probes run from kube-probes without credentials — they must
+    Health probes run from kube-probes without credentials - they must
     not be gated behind X-API-Key. This test asserts explicitly that
     omitting the header still works.
     """
@@ -139,7 +139,7 @@ def test_configure_logging_attaches_single_handler() -> None:
 
 def test_configure_logging_quiets_uvicorn_access() -> None:
     """
-    uvicorn.access is noisy — our setup must raise it to WARNING so
+    uvicorn.access is noisy - our setup must raise it to WARNING so
     dev console output stays focused on our own logs.
     """
     from src.logging_config import configure_logging

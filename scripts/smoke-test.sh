@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # -------------------------------------------------------------------------
-# smoke-test.sh — Run the exact curl from the exercise PDF and verify
+# smoke-test.sh - Run the exact curl from the exercise PDF and verify
 # the full happy path: submit → poll → fetch results.
 #
 # Requires the stack to be running (`make up`) and port-forwarded to :8000.

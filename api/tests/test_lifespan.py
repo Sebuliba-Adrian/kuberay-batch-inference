@@ -10,7 +10,7 @@ The lifespan context manager is the production boot sequence:
   6. On shutdown: stop the poller, dispose the DB engine
 
 Tests prove the lifespan actually runs these steps end-to-end and
-tears them down cleanly. Nothing is mocked — a fake Ray is injected
+tears them down cleanly. Nothing is mocked - a fake Ray is injected
 via set_client_factory BEFORE the app is built, exactly as the
 production code path does it via env-var config + dependency graph.
 """

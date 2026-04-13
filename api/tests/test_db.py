@@ -1,8 +1,8 @@
 """
-Red tests for src.db — the PostgreSQL/SQLAlchemy async persistence layer.
+Red tests for src.db - the PostgreSQL/SQLAlchemy async persistence layer.
 
 All tests use an in-memory aiosqlite database so they're hermetic and
-fast — no docker-compose-postgres fixture required. The module under
+fast - no docker-compose-postgres fixture required. The module under
 test must accept any async SQLAlchemy URL, which it does via
 init_engine(url).
 """
@@ -27,7 +27,7 @@ async def fresh_db() -> None:
 
     # Each test gets a unique in-memory DB via a named URI.
     # Without `cache=shared` a new :memory: connection gets its own
-    # empty database — breaks tests that create_all then query.
+    # empty database - breaks tests that create_all then query.
     url = "sqlite+aiosqlite:///file:test_db?mode=memory&cache=shared&uri=true"
     await db.init_engine(url)
     await db.create_all()
@@ -181,7 +181,7 @@ async def test_session_scope_rolls_back_on_exception(fresh_db: None) -> None:
             s.add(Batch(id="batch_rollback", status="queued", model="m", input_count=1))
             raise DeliberateError
 
-    # Row must NOT be visible — rollback fired.
+    # Row must NOT be visible - rollback fired.
     async with db.session_scope() as s:
         row = await db.get_batch(s, "batch_rollback")
     assert row is None

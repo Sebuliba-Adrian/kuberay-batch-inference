@@ -1,5 +1,5 @@
 """
-Red tests for src.ray_client — async wrapper around Ray's sync
+Red tests for src.ray_client - async wrapper around Ray's sync
 JobSubmissionClient.
 
 Tests never touch the real Ray package. A fake client is injected via
@@ -150,7 +150,7 @@ def test_default_factory_builds_real_ray_client(
     monkeypatch.setitem(sys.modules, "ray", stub_parent)
     monkeypatch.setitem(sys.modules, "ray.job_submission", stub_child)
 
-    ray_client.reset()  # no factory override — will hit _default_factory
+    ray_client.reset()  # no factory override - will hit _default_factory
     ray_client.init("http://ray-head:8265")
 
     assert built == ["http://ray-head:8265"]
@@ -205,7 +205,7 @@ async def test_submit_batch_forwards_entrypoint_and_env(
 async def test_submit_batch_accepts_none_runtime_env(
     fake_ray: FakeRayClient,
 ) -> None:
-    """runtime_env is optional — None must be coerced to {} not crash."""
+    """runtime_env is optional - None must be coerced to {} not crash."""
     from src import ray_client  # noqa: PLC0415
 
     await ray_client.submit_batch(entrypoint="python run.py")
@@ -245,14 +245,14 @@ def test_map_status_stopped() -> None:
 
 
 def test_map_status_unknown_falls_back_to_failed() -> None:
-    """An unknown Ray state is the safer default for observers — treat as failure."""
+    """An unknown Ray state is the safer default for observers - treat as failure."""
     from src.ray_client import map_status
 
     assert map_status("WEIRD_NEW_STATE") == "failed"
 
 
 def test_map_status_accepts_enum_like_object() -> None:
-    """Real ray JobStatus is an enum with a .value attribute — accept both forms."""
+    """Real ray JobStatus is an enum with a .value attribute - accept both forms."""
     from src.ray_client import map_status
 
     class FakeJobStatus:

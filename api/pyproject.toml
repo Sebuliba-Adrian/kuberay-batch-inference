@@ -9,7 +9,7 @@ authors = [
     { name = "Adrian Sebuliba" },
 ]
 
-# Runtime dependencies — locked in uv.lock for reproducibility.
+# Runtime dependencies - locked in uv.lock for reproducibility.
 dependencies = [
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.32,<1",
@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Dev / test / lint — installed via `uv sync --extra dev` or `pip install -e .[dev]`
+# Dev / test / lint - installed via `uv sync --extra dev` or `pip install -e .[dev]`
 dev = [
     "pytest>=8.3,<9",
     "pytest-asyncio>=0.24,<1",
@@ -67,9 +67,9 @@ select = [
     "TID",       # tidy imports
 ]
 ignore = [
-    "E501",      # line length — handled by formatter
-    "PLR0913",   # too many args — pragmatic for config models
-    "PLR2004",   # magic numbers — fine in tests
+    "E501",      # line length - handled by formatter
+    "PLR0913",   # too many args - pragmatic for config models
+    "PLR2004",   # magic numbers - fine in tests
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -82,16 +82,16 @@ ignore = [
 "tests/**/*.py" = [
     "B",         # bugbear (test patterns often violate)
     "PLR",       # pylint refactor rules
-    "PLC0415",   # import-outside-top-level — intentional in fixture setup
+    "PLC0415",   # import-outside-top-level - intentional in fixture setup
     "PT004",     # pytest-missing-fixture-name-underscore
-    "PT012",     # pytest-raises-with-multiple-statements — intentional
-    "PT019",     # pytest-fixture-param-without-value — false positives
+    "PT012",     # pytest-raises-with-multiple-statements - intentional
+    "PT019",     # pytest-fixture-param-without-value - false positives
     "TID252",    # relative-imports (tests can use `from src...`)
-    "TC003",     # typing-only-std-lib — tests import for runtime use too
-    "SIM108",    # if-else-block-instead-of-if-exp — test readability wins
-    "SIM105",    # suppressible-exception — intentional broad except in tests
-    "F401",      # unused-import — common when refactoring test scaffolding
-    "RUF100",    # unused-noqa — moved targets during the refactor above
+    "TC003",     # typing-only-std-lib - tests import for runtime use too
+    "SIM108",    # if-else-block-instead-of-if-exp - test readability wins
+    "SIM105",    # suppressible-exception - intentional broad except in tests
+    "F401",      # unused-import - common when refactoring test scaffolding
+    "RUF100",    # unused-noqa - moved targets during the refactor above
 ]
 
 [tool.ruff.format]

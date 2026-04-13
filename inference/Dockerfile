@@ -13,7 +13,7 @@
 #   kind load docker-image local/ray-worker:2.54.1-cpu --name kuberay-dev
 #
 # The resulting image is ~2.5 GB (Ray ~1.2 GB + torch CPU ~500 MB + Qwen
-# weights ~1 GB). That's the price of reproducibility — runtime HF pulls
+# weights ~1 GB). That's the price of reproducibility - runtime HF pulls
 # are fragile under rate limits.
 # -----------------------------------------------------------------------
 
@@ -71,7 +71,7 @@ ENV PYTHONPATH=/app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Verify import on image build — fails fast if requirements or code are
+# Verify import on image build - fails fast if requirements or code are
 # broken, instead of at pod start time.
 RUN python -c "import importlib.util, sys; \
 s = importlib.util.spec_from_file_location('batch_infer', '/app/jobs/batch_infer.py'); \
@@ -79,6 +79,6 @@ m = importlib.util.module_from_spec(s); \
 s.loader.exec_module(m); \
 print('batch_infer module loaded OK')"
 
-# Default command — the base rayproject/ray image expects its own
+# Default command - the base rayproject/ray image expects its own
 # entrypoint (ray start ...) which KubeRay overrides via rayStartParams.
 # We don't set CMD here so KubeRay's bootstrap wins.

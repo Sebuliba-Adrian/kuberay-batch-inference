@@ -93,7 +93,7 @@ def test_create_batch_request_rejects_negative_max_tokens() -> None:
 
 
 def test_create_batch_request_rejects_max_tokens_over_limit() -> None:
-    """8192 is the upper bound — anything higher is rejected."""
+    """8192 is the upper bound - anything higher is rejected."""
     from src.models import CreateBatchRequest
 
     with pytest.raises(ValidationError):
@@ -102,7 +102,7 @@ def test_create_batch_request_rejects_max_tokens_over_limit() -> None:
 
 # ─── CreateBatchRequest: model name ─────────────────────────────────
 def test_create_batch_request_rejects_model_with_spaces() -> None:
-    """Model name is a repo id — spaces are invalid."""
+    """Model name is a repo id - spaces are invalid."""
     from src.models import CreateBatchRequest
 
     with pytest.raises(ValidationError):
@@ -223,7 +223,7 @@ def test_batch_object_with_completed_at_set() -> None:
 
 
 def test_request_counts_rejects_negative_values() -> None:
-    """Counts can't be negative — that's a bug waiting to happen."""
+    """Counts can't be negative - that's a bug waiting to happen."""
     from src.models import RequestCounts
 
     with pytest.raises(ValidationError):

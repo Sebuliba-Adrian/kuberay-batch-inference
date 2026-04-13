@@ -20,7 +20,7 @@ kube-state-metrics:
 
 # ─── Server config ────────────────────────────────────────────────────
 server:
-  # No persistence — this is a demo cluster, data is throwaway
+  # No persistence - this is a demo cluster, data is throwaway
   persistentVolume:
     enabled: false
 
@@ -42,7 +42,7 @@ server:
     evaluation_interval: 15s
 
   # The ClusterRole the chart creates gives pod discovery across all
-  # namespaces — needed by the kubernetes_sd_configs in extraScrapeConfigs
+  # namespaces - needed by the kubernetes_sd_configs in extraScrapeConfigs
   # below to find Ray head and worker pods in the `ray` namespace.
 
 # ─── Custom scrape configs ───────────────────────────────────────────
@@ -82,7 +82,7 @@ extraScrapeConfigs: |
       - source_labels: [__meta_kubernetes_pod_name]
         target_label: instance
 
-  # FastAPI proxy metrics (future — when /metrics endpoint is added via
+  # FastAPI proxy metrics (future - when /metrics endpoint is added via
   # prometheus-fastapi-instrumentator, this scrape config picks it up).
   # Commented out because the endpoint isn't wired yet; uncomment when it is.
   # - job_name: 'batch-api'

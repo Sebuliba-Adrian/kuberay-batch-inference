@@ -1,7 +1,7 @@
 # Local Kubernetes cluster definition for the KubeRay Batch Inference demo.
 #
 # Single control-plane node (which is also allowed to run workloads) keeps the
-# resource budget under control on a laptop — Ray "workers" are pods scheduled
+# resource budget under control on a laptop - Ray "workers" are pods scheduled
 # on this node, not extra kind nodes.
 #
 # extraPortMappings expose:

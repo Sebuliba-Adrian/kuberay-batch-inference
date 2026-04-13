@@ -2,7 +2,7 @@
 Red tests for GET /v1/batches/{batch_id}.
 
 The status endpoint reads the DB row and returns it in OpenAI-shaped
-BatchObject form. It does NOT query Ray on the hot path — the
+BatchObject form. It does NOT query Ray on the hot path - the
 background status poller (later TDD cycle) is responsible for
 keeping the DB row fresh. This separation keeps the GET handler
 fast and resilient to Ray outages.
