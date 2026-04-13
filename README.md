@@ -111,7 +111,6 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the decision log, trade-o
 - [`docs/SETUP.md`](docs/SETUP.md) — End-to-end Ubuntu 22.04 setup from a fresh machine
 - [`docs/API.md`](docs/API.md) — REST API reference with curl examples
 - [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) — Full technical report (dataset analysis, method comparison, evaluation, production monitoring)
-- [`docs/PRESENTATION.md`](docs/PRESENTATION.md) — Talk track for the 30-45 min demo
 
 ## Repository layout
 
@@ -127,8 +126,7 @@ kuberay-batch-inference/
 │   ├── ARCHITECTURE.md           # Decision log, trade-offs, threat model
 │   ├── SETUP.md                  # End-to-end Ubuntu walkthrough
 │   ├── API.md                    # REST reference with curl examples
-│   ├── TECHNICAL_REPORT.md       # 5-question deep dive + monitoring plan
-│   └── PRESENTATION.md           # 30-45 min talk track
+│   └── TECHNICAL_REPORT.md       # 5-question deep dive + monitoring plan
 ├── k8s/
 │   ├── kind/kind-config.yaml     # single-node kind with extraPortMappings + extraMounts
 │   ├── kuberay/values.yaml       # operator Helm values

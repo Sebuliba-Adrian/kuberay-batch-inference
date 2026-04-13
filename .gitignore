@@ -90,3 +90,12 @@ models/
 /results/
 *.jsonl.local
 tmp/
+
+# Presentation talk track is for the live call, not the submission repo
+docs/PRESENTATION.md
+
+# Local agent handoff notes — never commit
+CLAUDE.md
+AGENTS.md
+.claude/
+.cursor/
