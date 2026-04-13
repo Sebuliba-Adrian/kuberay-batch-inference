@@ -1,4 +1,4 @@
-# KubeRay Batch Inference — single entry point for all operations.
+# KubeRay Batch Inference - single entry point for all operations.
 #
 # Targets are grouped by lifecycle stage. Run `make help` for the full list.
 
@@ -120,7 +120,7 @@ api: namespace postgres ## Deploy the FastAPI proxy
 up: cluster-up kuberay-install build-images load-images namespace storage postgres raycluster api port-forward ## Bring up EVERYTHING: kind + KubeRay + RayCluster + API + postgres
 
 .PHONY: down
-down: ## Tear down everything (keeps the kind cluster — use `make cluster-down` to nuke)
+down: ## Tear down everything (keeps the kind cluster - use `make cluster-down` to nuke)
 	kubectl delete -n $(NAMESPACE) -f k8s/api/ --ignore-not-found
 	kubectl delete -n $(NAMESPACE) -f k8s/raycluster/raycluster.yaml --ignore-not-found
 	kubectl delete -n $(NAMESPACE) -f k8s/postgres/ --ignore-not-found

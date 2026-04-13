@@ -156,7 +156,7 @@ async def test_poll_leaves_running_batch_unchanged(
     async with db.session_scope() as s:
         row = await db.get_batch(s, "batch_r")
     assert row is not None
-    # Ray RUNNING maps to in_progress — we update the status even when
+    # Ray RUNNING maps to in_progress - we update the status even when
     # still active, so the row should now reflect that.
     assert row.status == "in_progress"
     assert row.completed_at is None
@@ -338,7 +338,7 @@ async def test_poll_swallows_ray_errors_on_individual_batches(
 ) -> None:
     """
     If Ray errors while checking one batch, the poller must log and
-    continue to the next — a transient Ray hiccup should not stall
+    continue to the next - a transient Ray hiccup should not stall
     every in-flight batch.
     """
     fake, _root = poller_env
@@ -362,7 +362,7 @@ async def test_poll_swallows_ray_errors_on_individual_batches(
     from src import db  # noqa: PLC0415
     from src.routes.batches import poll_active_batches  # noqa: PLC0415
 
-    # Must not raise — the error on batch_a should be caught
+    # Must not raise - the error on batch_a should be caught
     await poll_active_batches()
 
     async with db.session_scope() as s:
@@ -408,7 +408,7 @@ async def test_apply_success_with_missing_row_returns_silently(
 
     from src.routes.batches import _apply_success
 
-    # No seeding — row doesn't exist
+    # No seeding - row doesn't exist
     await _apply_success(
         "batch_missing",
         {"completed": 1, "failed": 0},
@@ -442,7 +442,7 @@ async def test_update_status_only_with_missing_row_returns_silently(
     """
     from src.routes.batches import _update_status_only
 
-    # No seeding — row does not exist. Must not raise.
+    # No seeding - row does not exist. Must not raise.
     await _update_status_only("batch_missing", "in_progress")
 
 
@@ -487,7 +487,7 @@ async def test_poller_loop_reraises_cancelled_error_from_sweep(
     Force the cancellation to land WHILE ``poll_active_batches()`` is
     mid-execution, not during the idle ``asyncio.sleep`` between
     sweeps. This exercises the ``except asyncio.CancelledError: raise``
-    branch deterministically across platforms — otherwise coverage
+    branch deterministically across platforms - otherwise coverage
     only hits it when timing happens to put the task inside the try
     block at cancel time.
     """
@@ -500,7 +500,7 @@ async def test_poller_loop_reraises_cancelled_error_from_sweep(
     async def _slow_sweep() -> None:
         inside_sweep.set()
         # Long sleep guaranteed to still be awaiting when the task is
-        # cancelled — CancelledError will raise out of this sleep,
+        # cancelled - CancelledError will raise out of this sleep,
         # unwind to the enclosing ``try``, and hit the
         # ``except asyncio.CancelledError: raise`` branch.
         await asyncio.sleep(10)
@@ -525,7 +525,7 @@ async def test_poller_loop_logs_and_continues_on_sweep_exception(
 ) -> None:
     """
     If poll_active_batches raises a non-CancelledError the loop must
-    log the error and keep running — a bug in one sweep cannot stall
+    log the error and keep running - a bug in one sweep cannot stall
     all future sweeps.
     """
     import asyncio

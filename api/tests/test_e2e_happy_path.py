@@ -14,7 +14,7 @@ cares about:
   5. Client fetches GET /v1/batches/{id}/results and receives
      NDJSON with one result per input
 
-Nothing is mocked at the handler level — the fake Ray is installed
+Nothing is mocked at the handler level - the fake Ray is installed
 via the public set_client_factory seam, the DB is a real
 file-backed SQLite, the filesystem is a real tmp_path, and the
 app is built via the production create_app factory.
@@ -92,7 +92,7 @@ class E2EFakeRay:
         batch_dir.mkdir(parents=True, exist_ok=True)
 
         results_path = batch_dir / "results.jsonl"
-        # Re-generate results on every SUCCEEDED call is fine — the
+        # Re-generate results on every SUCCEEDED call is fine - the
         # write is idempotent.
         input_path = batch_dir / "input.jsonl"
         rows: list[dict[str, Any]] = []

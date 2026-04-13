@@ -1,7 +1,7 @@
 """
 Liveness and readiness probe endpoints.
 
-``/health`` is intentionally cheap — no DB, no Ray. Kubernetes uses
+``/health`` is intentionally cheap - no DB, no Ray. Kubernetes uses
 it as the livenessProbe: if the process is running and serving HTTP
 we stay alive. A crash in Postgres or Ray does NOT cascade into
 killing the API pod.

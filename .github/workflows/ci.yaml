@@ -101,7 +101,7 @@ jobs:
 
       - name: Validate manifests
         # Skip the RayCluster CRD since it lives outside the bundled
-        # k8s OpenAPI schemas — kubeconform would otherwise fail on
+        # k8s OpenAPI schemas - kubeconform would otherwise fail on
         # the unknown kind. We verify the RayCluster manifest shape
         # in the e2e smoke test on a real kind cluster.
         run: |

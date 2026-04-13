@@ -22,7 +22,7 @@
 replicaCount: 1
 
 # Conservative resource envelope for the operator pod itself. The operator
-# is a controller-loop, not a data-plane component — these numbers are
+# is a controller-loop, not a data-plane component - these numbers are
 # independent of the Ray workloads it manages.
 resources:
   requests:
@@ -34,7 +34,7 @@ resources:
 
 # ─── Watch scope ─────────────────────────────────────────────────────
 # Omitted: the operator watches all namespaces by default, which is what
-# we want for this repo — the RayCluster lives in 'ray' and the operator
+# we want for this repo - the RayCluster lives in 'ray' and the operator
 # lives in 'kuberay-system'.
 #
 # To restrict to a single namespace in a multi-tenant shared cluster:

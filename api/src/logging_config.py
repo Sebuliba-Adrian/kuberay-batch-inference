@@ -2,7 +2,7 @@
 Stdlib logging setup.
 
 Deliberately minimal: one format string, one stdout handler, one
-level. No structlog, no JSON formatter library — for a take-home the
+level. No structlog, no JSON formatter library - for a take-home the
 extra ceremony obscures intent. Production would swap for
 python-json-logger or structlog behind the same entry point.
 """

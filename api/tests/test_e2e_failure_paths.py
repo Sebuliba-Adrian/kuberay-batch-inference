@@ -254,7 +254,7 @@ async def test_e2e_ray_unreachable_health_endpoint_still_200(
     app_with_unreachable_ray: Any,
 ) -> None:
     """
-    /health is a liveness probe — it must stay 200 even with Ray down.
+    /health is a liveness probe - it must stay 200 even with Ray down.
     Kubernetes should NOT restart the pod just because Ray is unhealthy.
     """
     app = app_with_unreachable_ray

@@ -1,7 +1,7 @@
 """
 Red tests for POST /v1/batches.
 
-This is the first cross-module integration test — it exercises auth,
+This is the first cross-module integration test - it exercises auth,
 models, db, storage, and ray_client all wired through the FastAPI
 handler. All external dependencies are faked (in-memory SQLite, tmp
 filesystem, FakeRayClient), but the request goes through the full

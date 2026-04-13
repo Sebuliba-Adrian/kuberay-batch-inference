@@ -182,7 +182,7 @@ async def test_results_409_when_batch_in_progress(
 async def test_results_409_when_batch_failed(
     app_db_storage: tuple[Any, Path], api_key: str
 ) -> None:
-    """A failed batch has no results to stream — 409, not 200."""
+    """A failed batch has no results to stream - 409, not 200."""
     app, _root = app_db_storage
     await _seed_batch("batch_fail", "failed")
 
@@ -277,7 +277,7 @@ async def test_results_500_when_completed_but_file_missing(
 ) -> None:
     """
     If the row says 'completed' but results.jsonl is missing, return
-    500 — this is a data-plane corruption case.
+    500 - this is a data-plane corruption case.
     """
     app, _root = app_db_storage
     await _seed_batch(
@@ -286,7 +286,7 @@ async def test_results_500_when_completed_but_file_missing(
         input_count=1,
         completed_count=1,
     )
-    # no _write_results_jsonl — file deliberately absent
+    # no _write_results_jsonl - file deliberately absent
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:

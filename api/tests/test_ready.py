@@ -1,5 +1,5 @@
 """
-Red tests for GET /ready — dependency health probe.
+Red tests for GET /ready - dependency health probe.
 
 /ready is the deeper sibling of /health: it checks that Postgres and
 Ray are actually reachable, so Kubernetes only routes traffic to the
@@ -85,7 +85,7 @@ async def test_ready_returns_200_when_all_deps_healthy(ready_app: Any) -> None:
 
 
 async def test_ready_requires_no_auth(ready_app: Any) -> None:
-    """Probes run without credentials — /ready must be public."""
+    """Probes run without credentials - /ready must be public."""
     transport = ASGITransport(app=ready_app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         r = await ac.get("/ready")  # no X-API-Key

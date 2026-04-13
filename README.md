@@ -25,7 +25,7 @@ The service exposes an OpenAI-shaped Batches API at `POST /v1/batches`, authenti
 |---|---|
 | **Tests** | 169 passing, 100% line + branch coverage on 464 statements / 78 branches |
 | **CI** | Green on `ubuntu-22.04` runner (lint + typecheck + test + kubeconform + docker build) |
-| **Runtime** | End-to-end verified on a real kind + KubeRay cluster — Ray Data pipeline producing real `Qwen2.5-0.5B` inference from the exact curl in the exercise PDF |
+| **Runtime** | End-to-end verified on a real kind + KubeRay cluster - Ray Data pipeline producing real `Qwen2.5-0.5B` inference from the exact curl in the exercise PDF |
 | **Spec compliance** | Ubuntu 22.04 requirement verified empirically by the CI runner on every commit |
 | **TDD discipline** | Every line in `api/src/` driven by a failing test first. `--cov-fail-under=100` gate enforced in CI. |
 
@@ -49,7 +49,7 @@ Target environment: **Ubuntu 22.04** (per the exercise spec). Ubuntu 24.04, WSL2
 
 **Hardware:** at least **8 CPU cores** and **16 GiB RAM free**. The Ray head + 2 workers alone reserve 5 CPU / 13 GiB.
 
-If you don't have any of these yet, skip to step 3 — the setup script installs everything.
+If you don't have any of these yet, skip to step 3 - the setup script installs everything.
 
 ### 2. Clone the repo
 
@@ -78,7 +78,7 @@ python3 --version           # 3.11+
 
 ### 4. Bring up the full stack
 
-One command boots everything — kind cluster, KubeRay operator, RayCluster, Postgres, shared PVC, API, and port-forward.
+One command boots everything - kind cluster, KubeRay operator, RayCluster, Postgres, shared PVC, API, and port-forward.
 
 ```bash
 make up
@@ -109,7 +109,7 @@ curl http://localhost:8000/ready | jq .
 
 ### 5. Submit the exact exercise-PDF curl
 
-Export the API key (default value — override via `API_KEY` env var on the Deployment for real use):
+Export the API key (default value - override via `API_KEY` env var on the Deployment for real use):
 
 ```bash
 export API_KEY="demo-api-key-change-me-in-production"
@@ -179,7 +179,7 @@ You'll see `status` progress: `queued` → `in_progress` → `completed`. The 5 
 curl -s -H "X-API-Key: $API_KEY" http://localhost:8000/v1/batches/$BATCH/results
 ```
 
-Streamed as `application/x-ndjson` (one JSON object per line). These are **real Qwen2.5-0.5B-Instruct generations captured from the live end-to-end run** — not mocks:
+Streamed as `application/x-ndjson` (one JSON object per line). These are **real Qwen2.5-0.5B-Instruct generations captured from the live end-to-end run** - not mocks:
 
 ```
 {"id":"0","prompt":"What is 2+2?","response":"The answer to 2 + 2 is 4. This is a simple addition problem...","finish_reason":"stop","prompt_tokens":6,"completion_tokens":24,"error":null}
@@ -194,7 +194,7 @@ The everything-at-once verification: runs the exact spec curl, both auth negativ
 make smoke-test
 ```
 
-### 10. (Optional) Monitoring — Prometheus + Grafana + Ray dashboards
+### 10. (Optional) Monitoring - Prometheus + Grafana + Ray dashboards
 
 Only needed if you want live metrics panels during the demo.
 
@@ -203,7 +203,7 @@ make monitoring-up      # installs Prometheus + Grafana into the monitoring name
 make grafana            # port-forwards Grafana to localhost:3000 (admin/admin)
 ```
 
-Then refresh `http://localhost:8265/#/metrics` in the Ray dashboard — the Metrics tab now iframes Grafana panels.
+Then refresh `http://localhost:8265/#/metrics` in the Ray dashboard - the Metrics tab now iframes Grafana panels.
 
 ### 11. Tear down
 
@@ -216,7 +216,7 @@ make cluster-down       # nuke the kind cluster entirely
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `make up` hangs at "Waiting for RayCluster to become ready" | Worker image build didn't finish / Qwen download slow | `kubectl -n ray describe rayclusters/qwen-raycluster` — check worker pod events |
+| `make up` hangs at "Waiting for RayCluster to become ready" | Worker image build didn't finish / Qwen download slow | `kubectl -n ray describe rayclusters/qwen-raycluster` - check worker pod events |
 | API pod crash-loops on boot | Postgres not ready yet | `kubectl -n ray rollout status deploy/postgres --timeout=180s` first |
 | `401 Unauthorized` with correct key | `.env` file has a stale key; Deployment uses the Secret | Check `kubectl -n ray get secret batch-api-secret -o jsonpath='{.data.API_KEY}' \| base64 -d` |
 | Ray worker `OOMKilled` | 5 GiB worker memory too low for your Qwen build | Edit `k8s/raycluster/raycluster.yaml` → worker resources → `memory: "7Gi"` |
@@ -255,10 +255,10 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the decision log, trade-o
 
 ## Documentation
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — Decision log, architecture trade-offs, answers to the 5 key exercise questions
-- [`docs/SETUP.md`](docs/SETUP.md) — End-to-end Ubuntu 22.04 setup from a fresh machine
-- [`docs/API.md`](docs/API.md) — REST API reference with curl examples
-- [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) — Full technical report (dataset analysis, method comparison, evaluation, production monitoring)
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - Decision log, architecture trade-offs, answers to the 5 key exercise questions
+- [`docs/SETUP.md`](docs/SETUP.md) - End-to-end Ubuntu 22.04 setup from a fresh machine
+- [`docs/API.md`](docs/API.md) - REST API reference with curl examples
+- [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) - Full technical report (dataset analysis, method comparison, evaluation, production monitoring)
 
 ## Repository layout
 
@@ -327,9 +327,9 @@ kuberay-batch-inference/
 │   └── smoke-test.sh             # The exact curl from the exercise PDF + auth checks
 └── .github/
     └── workflows/
-        └── ci.yaml               # runs-on: ubuntu-22.04 — lint + typecheck + test + kubeconform + docker
+        └── ci.yaml               # runs-on: ubuntu-22.04 - lint + typecheck + test + kubeconform + docker
 ```
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT - see [`LICENSE`](LICENSE).
