@@ -194,7 +194,20 @@ The everything-at-once verification: runs the exact spec curl, both auth negativ
 make smoke-test
 ```
 
-### 10. Observability: `/metrics` and structured logs
+### 10. Web UIs: Swagger, ReDoc, and the Ray dashboard
+
+Once `make up` is done and port-forwards are live, three browser endpoints are handy:
+
+| URL | What it is |
+|---|---|
+| [`http://localhost:8000/docs`](http://localhost:8000/docs) | Swagger UI - auto-generated from the FastAPI schema; hit **Authorize** and paste the API key (`demo-api-key-change-me-in-production` by default) to try `POST /v1/batches`, `GET /v1/batches/{id}`, and `GET /v1/batches/{id}/results` from the browser |
+| [`http://localhost:8000/redoc`](http://localhost:8000/redoc) | ReDoc - same OpenAPI schema, three-panel reference layout |
+| [`http://localhost:8000/openapi.json`](http://localhost:8000/openapi.json) | Raw OpenAPI 3.1 document - feed into `openapi-generator`, Postman, or `curl | jq` |
+| [`http://localhost:8265`](http://localhost:8265) | Ray dashboard - cluster state, job list, per-job logs, actor/task views; `make up`'s port-forward already maps it via the `qwen-raycluster-dashboard-np` NodePort |
+
+If the Ray dashboard is not reachable, re-run `make dashboard` to re-establish the port-forward in a separate terminal.
+
+### 11. Observability: `/metrics` and structured logs
 
 The FastAPI proxy exposes Prometheus metrics at `/metrics` (no auth required, cheap to scrape):
 
@@ -212,7 +225,7 @@ You get:
 
 Every response carries an `X-Request-ID` header (echoed if the client supplied one, otherwise a `uuid4().hex` is generated) and logs are emitted as one-JSON-object-per-line with `request_id` and `batch_id` context attached.
 
-### 11. Benchmark
+### 12. Benchmark
 
 A scripted load test that submits a 15-prompt batch, polls until terminal, and reports submit latency, poll latency distribution, wall time, and throughput:
 
@@ -220,7 +233,7 @@ A scripted load test that submits a 15-prompt batch, polls until terminal, and r
 python scripts/benchmark.py
 ```
 
-### 12. (Optional) Monitoring stack - Prometheus + Grafana + Ray dashboards
+### 13. (Optional) Monitoring stack - Prometheus + Grafana + Ray dashboards
 
 Only needed if you want live metrics panels during the demo.
 
@@ -231,7 +244,7 @@ make grafana            # port-forwards Grafana to localhost:3000 (admin/admin)
 
 Then refresh `http://localhost:8265/#/metrics` in the Ray dashboard - the Metrics tab now iframes Grafana panels.
 
-### 13. Tear down
+### 14. Tear down
 
 ```bash
 make down               # remove the app, keep the cluster for fast rebuilds
