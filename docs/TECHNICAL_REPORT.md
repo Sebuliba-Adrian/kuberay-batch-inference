@@ -205,6 +205,35 @@ The full stack has been brought up on a real (local) KubeRay cluster and the exa
 
 **Three additional cross-platform coverage gaps** were surfaced when the CI suite ran on `ubuntu-22.04` / python 3.11 for the first time after those runtime fixes landed - coverage.py traces a few sync-after-await patterns differently on Linux 3.11 vs Windows 3.12. One is a documented tracer blind spot (`# pragma: no cover` with a comment explaining the reason); the other two were closed by splitting a compound `if` condition into explicit early returns and adding a test that forces `CancelledError` to propagate from inside the poller's `try` block via a monkeypatched slow sweep. Full suite is 169 cases, 100% line and branch on both platforms.
 
+#### 3.5.1 Post-observability re-verification on WSL2 (2026-04-13)
+
+A second bring-up was performed on WSL2 (Ubuntu 22.04, 15 GiB RAM, 4 CPU) after the observability stack landed (structured JSON logs, Prometheus `/metrics`, `X-Request-ID` propagation, and `scripts/benchmark.py`). Three more real bugs surfaced during that run and were fixed in this commit:
+
+1. **hostPath permissions on kind's `extraMounts` target** - `make up` (not `scripts/up.sh`) skipped the host-side `chmod 0777`, and the bind-mounted `/mnt/data` inside the kind node kept kind's default `0755 root:root`. First `POST /v1/batches` returned 500 with `PermissionError: [Errno 13] Permission denied: '/data/batches/batch_...'`. Fixed by adding `docker exec $(CLUSTER_NAME)-control-plane chmod -R 0777 /mnt/data` to the Makefile's `storage` target so the fix holds regardless of how the stack is brought up.
+2. **Prometheus `http_requests_total` path-label cardinality** - `RequestIdMiddleware` labelled the metric with `request.url.path`, which includes the literal batch ULID (`/v1/batches/batch_01KP2...`). Every distinct batch created a new label series, defeating the whole point of the counter. Fixed by reading `request.scope["route"].path` after `call_next`, which Starlette populates with the matched route template (`/v1/batches/{batch_id}`). Falls back to the literal path for unmatched (404) routes. TDD: two new tests in `test_observability.py` assert the templated form appears and the literal ULID does not.
+3. **`scripts/benchmark.py` results parser** - called `json.loads()` on the whole `/results` body, which is newline-delimited JSON, and crashed with `json.decoder.JSONDecodeError: Extra data: line 2 column 1` the moment a batch had more than one request. Fixed by splitting on lines and parsing each record independently, matching how the OpenAI Batches API wire format is meant to be consumed.
+
+A fourth issue - **Ray head and both workers restarted mid-run under memory pressure** (15 GiB WSL ceiling, two 5 GiB Ray workers plus Postgres + API + HF weight load + browser) - was _not_ patched in code. The existing probe timeouts (`timeoutSeconds: 15`, `failureThreshold: 5`) were already generous; bumping them further only delays the eviction without fixing the root cause (under-provisioned host). Documented as a known limitation of the 16 GiB minimum in `docs/SETUP.md`; production sizing (`workerGroupSpecs[0].resources.requests.memory`) needs adjusting together with the host envelope, not independently.
+
+**Empirical numbers from the WSL run** (Qwen2.5-0.5B CPU, 2 Ray workers × 2 CPU each):
+
+| | 2-prompt smoke test | 15-prompt benchmark |
+|---|---|---|
+| submit latency (`POST /v1/batches`) | - | 131 ms |
+| queued → in_progress | ~5 s | ~6 s |
+| wall time (submit → completed) | ~130 s | 611 s |
+| poll latency p50 / p95 (`GET /v1/batches/{id}`) | - | 10.2 / 33.2 ms |
+| per-prompt average (CPU inference) | ~65 s | ~41 s |
+| successful responses | 2 / 2 | 15 / 15 |
+
+Observability counters verified firing with non-zero values:
+```
+batch_submitted_total{model="Qwen/Qwen2.5-0.5B-Instruct"} 1.0
+batch_terminal_total{model="Qwen/Qwen2.5-0.5B-Instruct",status="completed"} 1.0
+http_requests_total{method="GET",path="/v1/batches/{batch_id}",status="200"} ...
+```
+`X-Request-ID: test-trace-123` echoed correctly by `/health`.
+
 ---
 
 ## 4. Answers to the Five Key Exercise Questions
