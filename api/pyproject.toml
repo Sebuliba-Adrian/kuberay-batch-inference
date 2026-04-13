@@ -49,7 +49,7 @@ packages = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["src", "tests"]
+src = ["src"]
 
 [tool.ruff.lint]
 select = [
@@ -73,28 +73,6 @@ ignore = [
     "PLR2004",   # magic numbers - fine in tests
 ]
 
-[tool.ruff.lint.per-file-ignores]
-# Tests legitimately defer imports inside function bodies for env-var
-# fixture setup, use `pytest.fixture` with parametrize-style patterns
-# that ruff's PT rules flag, and import from ``src.`` with absolute
-# paths which `TID252` cannot distinguish from intra-package relatives.
-# Relaxing these rules for tests keeps the src/ standard strict while
-# letting test patterns breathe.
-"tests/**/*.py" = [
-    "B",         # bugbear (test patterns often violate)
-    "PLR",       # pylint refactor rules
-    "PLC0415",   # import-outside-top-level - intentional in fixture setup
-    "PT004",     # pytest-missing-fixture-name-underscore
-    "PT012",     # pytest-raises-with-multiple-statements - intentional
-    "PT019",     # pytest-fixture-param-without-value - false positives
-    "TID252",    # relative-imports (tests can use `from src...`)
-    "TC003",     # typing-only-std-lib - tests import for runtime use too
-    "SIM108",    # if-else-block-instead-of-if-exp - test readability wins
-    "SIM105",    # suppressible-exception - intentional broad except in tests
-    "F401",      # unused-import - common when refactoring test scaffolding
-    "RUF100",    # unused-noqa - moved targets during the refactor above
-]
-
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
@@ -110,11 +88,5 @@ show_error_codes = true
 ignore_missing_imports = true
 plugins = []
 
-# ─── pytest ─────────────────────────────────────────────────────────
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
-pythonpath = ["src"]
-filterwarnings = [
-    "ignore::DeprecationWarning:pydantic._internal",
-]
+# pytest config lives on main; demo branch has no test suite
+# (see BRANCH_NOTE.md at repo root).

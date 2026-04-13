@@ -98,7 +98,7 @@ EXPOSE 8000
 # Prefer uvicorn directly - Kubernetes handles replicas, no need
 # for gunicorn's process manager. --factory tells uvicorn to call
 # create_app() to get a fresh FastAPI instance.
-CMD ["uvicorn", "src.main:create_app", \
+CMD ["uvicorn", "src.app:create_app", \
      "--factory", \
      "--host", "0.0.0.0", \
      "--port", "8000", \
