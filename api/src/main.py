@@ -25,10 +25,11 @@ import logging
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 
 from . import db, ray_client
 from .config import get_settings
+from .observability import RequestIdMiddleware, render_metrics, setup_logging
 from .routes.batches import (
     router as batches_router,
 )
@@ -70,6 +71,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app's serving window.
     """
     settings = get_settings()
+    setup_logging(settings.LOG_LEVEL)
     log.info(
         "lifespan: starting (ray=%s, results_dir=%s)",
         settings.RAY_ADDRESS,
@@ -117,6 +119,13 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
         openapi_url="/openapi.json",
     )
+
+    app.add_middleware(RequestIdMiddleware)
+
+    @app.get("/metrics", include_in_schema=False)
+    def metrics() -> Response:
+        body, content_type = render_metrics()
+        return Response(content=body, media_type=content_type)
 
     app.include_router(health_router)
     app.include_router(batches_router)
