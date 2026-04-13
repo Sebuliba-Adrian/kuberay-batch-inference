@@ -118,7 +118,7 @@ def test_require_api_key_uses_constant_time_compare(
     """
     Verify the implementation calls hmac.compare_digest.
 
-    This is a white-box test — it asserts an implementation choice — but
+    This is a white-box test - it asserts an implementation choice - but
     the choice matters for security so we pin it explicitly. If a future
     refactor swaps to plain '==' the test catches it.
     """
@@ -143,7 +143,7 @@ def test_require_api_key_uses_constant_time_compare(
 
     asyncio.get_event_loop().run_until_complete(_exercise()) if False else asyncio.run(_exercise())
 
-    assert len(called) >= 1, "hmac.compare_digest was never called — auth is insecure"
+    assert len(called) >= 1, "hmac.compare_digest was never called - auth is insecure"
 
 
 # ─── Header name contract ───────────────────────────────────────────

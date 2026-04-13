@@ -6,7 +6,7 @@ reads. Parsed exactly once per process via @lru_cache, validated by
 pydantic-settings v2 at startup so misconfiguration fails fast instead
 of blowing up at the first request.
 
-SecretStr hides API_KEY from logs, exception reprs, and repr() output —
+SecretStr hides API_KEY from logs, exception reprs, and repr() output -
 never downgrade it to a plain str without a deliberate review.
 """
 
@@ -90,7 +90,7 @@ class Settings(BaseSettings):
     @field_validator("POSTGRES_URL")
     @classmethod
     def _postgres_url_must_be_async(cls, v: str) -> str:
-        # The whole codebase uses SQLAlchemy async — a sync driver would
+        # The whole codebase uses SQLAlchemy async - a sync driver would
         # deadlock the event loop the moment it's used.
         if not (v.startswith("postgresql+asyncpg://") or v.startswith("sqlite+aiosqlite://")):
             raise ValueError(

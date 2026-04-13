@@ -3,8 +3,8 @@
 # FastAPI proxy container image.
 #
 # Multi-stage build:
-#   1. builder (python:3.11-slim) — install deps with uv into a venv
-#   2. runtime (python:3.11-slim) — copy only the venv and src, drop
+#   1. builder (python:3.11-slim) - install deps with uv into a venv
+#   2. runtime (python:3.11-slim) - copy only the venv and src, drop
 #      root, run uvicorn directly
 #
 # Build:
@@ -47,7 +47,7 @@ RUN apt-get update \
       ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-# Install deps ONLY — cached layer, re-uses when only app code changes.
+# Install deps ONLY - cached layer, re-uses when only app code changes.
 COPY pyproject.toml ./
 RUN uv venv /app/.venv --python 3.11 \
  && uv pip install --python /app/.venv/bin/python \
@@ -94,7 +94,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
 USER app
 EXPOSE 8000
 
-# Prefer uvicorn directly — Kubernetes handles replicas, no need
+# Prefer uvicorn directly - Kubernetes handles replicas, no need
 # for gunicorn's process manager. --factory tells uvicorn to call
 # create_app() to get a fresh FastAPI instance.
 CMD ["uvicorn", "src.main:create_app", \

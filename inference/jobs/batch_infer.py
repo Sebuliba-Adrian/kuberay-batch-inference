@@ -18,7 +18,7 @@ Design notes
   grading. The vLLM path is the production upgrade; see docs/ARCHITECTURE
   §2.1 and §2.2 for the trade-off discussion.
 
-- The UDF class owns the model. `__init__` runs ONCE per actor — this is
+- The UDF class owns the model. `__init__` runs ONCE per actor - this is
   where the ~5-10s model load cost is paid. `__call__` runs per batch and
   is where the actual inference happens.
 
@@ -74,7 +74,7 @@ class QwenPredictor:
     def __init__(self, model_name: str, max_tokens: int) -> None:
         # 1. Heavy imports live INSIDE __init__ so Ray doesn't try to
         # serialize torch/transformers when it ships the UDF class to
-        # the actor — that would fail because those libs are C-backed.
+        # the actor - that would fail because those libs are C-backed.
         import torch  # noqa: PLC0415
         from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: PLC0415
 
@@ -145,7 +145,7 @@ class QwenPredictor:
 
         # 6. We process prompts one-by-one in a loop (not a padded batch)
         # because variable-length inputs create wasted KV cache work and
-        # because error isolation is cleaner — a malformed prompt cannot
+        # because error isolation is cleaner - a malformed prompt cannot
         # corrupt its neighbors. For throughput on GPU, switch to real
         # batched generation with left-padding.
         for idx, prompt in enumerate(prompts):
@@ -188,7 +188,7 @@ class QwenPredictor:
                     "stop" if last_token == self.tokenizer.eos_token_id else "length"
                 )
 
-            except Exception as exc:  # noqa: BLE001 — row-level isolation
+            except Exception as exc:  # noqa: BLE001 - row-level isolation
                 errors[idx] = f"{type(exc).__name__}: {exc}"
                 log.warning("prompt id=%s failed: %s", ids[idx], exc)
 
@@ -236,7 +236,7 @@ def run_batch(batch_id: str, model: str, max_tokens: int) -> dict[str, int]:
 
     # 2. Spin up the predictor actor pool with concurrency = worker count.
     # Each actor holds one model replica. batch_size tunes how many
-    # prompts each __call__ invocation processes at once — small is safer
+    # prompts each __call__ invocation processes at once - small is safer
     # on CPU because OOM risk scales with batch size.
     log.info("Running map_batches with concurrency=2 batch_size=8")
     out_ds = ds.map_batches(
@@ -285,7 +285,7 @@ def run_batch(batch_id: str, model: str, max_tokens: int) -> dict[str, int]:
         batch_id, total, completed, failed,
     )
 
-    # 6. Success marker last — its presence means "output is clean".
+    # 6. Success marker last - its presence means "output is clean".
     if error_marker.exists():
         error_marker.unlink()
     success_marker.write_text(
@@ -329,7 +329,7 @@ def main() -> int:
         log.info("Success: %s", counts)
         return 0
 
-    except Exception as exc:  # noqa: BLE001 — top-level crash handler
+    except Exception as exc:  # noqa: BLE001 - top-level crash handler
         log.error("Batch %s FAILED: %s", args.batch_id, exc)
         log.error(traceback.format_exc())
         # Drop a failure marker so the API can promote the batch row

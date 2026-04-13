@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # -------------------------------------------------------------------------
-# setup.sh — Install all prerequisites for the KubeRay Batch Inference
+# setup.sh - Install all prerequisites for the KubeRay Batch Inference
 # demo on a fresh Ubuntu 22.04 machine.
 #
 # Installs: docker, kind, kubectl, helm, jq, curl, make, python3.11, uv

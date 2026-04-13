@@ -67,7 +67,7 @@ sidecar:
 grafana.ini:
   server:
     # Grafana needs to know its public URL when Ray's dashboard iframes
-    # its panels from the browser — 127.0.0.1:3000 matches the
+    # its panels from the browser - 127.0.0.1:3000 matches the
     # RAY_GRAFANA_IFRAME_HOST we set on the Ray head container.
     root_url: "%(protocol)s://%(domain)s:%(http_port)s/"
   security:

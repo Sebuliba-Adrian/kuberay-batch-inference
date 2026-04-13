@@ -15,7 +15,7 @@ spec:
   replicas: 1
   strategy:
     # Recreate avoids two pods briefly both mounting the RWO PVC during
-    # a rolling update — kind's local-path provisioner does not support
+    # a rolling update - kind's local-path provisioner does not support
     # simultaneous mounts.
     type: Recreate
   selector:

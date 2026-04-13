@@ -20,7 +20,7 @@ Status vocabulary mapping (Ray → OpenAI Batch):
     FAILED    → failed
     STOPPED   → cancelled
 
-Any unknown value maps to ``failed`` — a safe fallback for a future
+Any unknown value maps to ``failed`` - a safe fallback for a future
 Ray version that adds a state we don't recognize yet.
 """
 
@@ -38,7 +38,7 @@ log = logging.getLogger(__name__)
 
 # ─── Module state ───────────────────────────────────────────────────
 # Both singletons are typed as Any so this module never has to import
-# the real ``ray`` package — tests would fail to collect if it did.
+# the real ``ray`` package - tests would fail to collect if it did.
 _client: Any = None
 _client_factory: Callable[[str], Any] | None = None
 

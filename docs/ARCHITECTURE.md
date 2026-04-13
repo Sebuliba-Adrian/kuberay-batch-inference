@@ -8,15 +8,15 @@ This document explains **what** this system does, **how** it's structured, and *
 
 A three-tier offline batch-inference service:
 
-1. **FastAPI proxy** — receives OpenAI-shaped batch requests, authenticates, persists job metadata, and dispatches work to Ray.
-2. **KubeRay + RayCluster** — a long-running distributed Ray cluster that executes the actual inference via Ray Data.
-3. **Shared storage** — PostgreSQL for job metadata and a shared persistent volume for JSONL inputs and results.
+1. **FastAPI proxy** - receives OpenAI-shaped batch requests, authenticates, persists job metadata, and dispatches work to Ray.
+2. **KubeRay + RayCluster** - a long-running distributed Ray cluster that executes the actual inference via Ray Data.
+3. **Shared storage** - PostgreSQL for job metadata and a shared persistent volume for JSONL inputs and results.
 
 ![System architecture](images/01-architecture.png)
 
-*Figure 1 — End-to-end topology inside a single kind cluster. The FastAPI proxy, Postgres, KubeRay-managed RayCluster, and optional Prometheus/Grafana sub-stack all share one PVC for batch JSONL.*
+*Figure 1 - End-to-end topology inside a single kind cluster. The FastAPI proxy, Postgres, KubeRay-managed RayCluster, and optional Prometheus/Grafana sub-stack all share one PVC for batch JSONL.*
 
-The **monitoring sub-stack** (Prometheus + Grafana) is optional —
+The **monitoring sub-stack** (Prometheus + Grafana) is optional -
 see §2.11 for the trade-offs and `scripts/install-monitoring.sh`
 for how to bring it up alongside the main stack. If not installed,
 the Ray dashboard hides its Metrics tab and everything else works
@@ -26,7 +26,7 @@ unchanged.
 
 ![Request flow](images/02-request-flow.png)
 
-*Figure 2 — Numbered steps along both sides of the split: green (FastAPI) handles auth, persistence, and job submission; blue (Ray) runs the distributed inference and writes results back to the shared PVC.*
+*Figure 2 - Numbered steps along both sides of the split: green (FastAPI) handles auth, persistence, and job submission; blue (Ray) runs the distributed inference and writes results back to the shared PVC.*
 
 1. Client `POST /v1/batches` with `X-API-Key` and `{model, input[], max_tokens}`.
 2. API authenticates (constant-time compare), validates the payload, assigns a ULID-based `batch_id`, inserts a row with `status=queued`, and writes the inputs to `/data/batches/<batch_id>/input.jsonl` on the shared PVC.
@@ -41,7 +41,7 @@ unchanged.
 
 ![Batch lifecycle](images/03-state-machine.png)
 
-*Figure 3 — The five states of a Batch row, mapped to Ray `JobStatus`. All transitions are driven by the async background poller on a 5 s tick; the POST handler only writes the initial `queued` row.*
+*Figure 3 - The five states of a Batch row, mapped to Ray `JobStatus`. All transitions are driven by the async background poller on a 5 s tick; the POST handler only writes the initial `queued` row.*
 
 ---
 
@@ -60,11 +60,11 @@ unchanged.
 **Decision:** The worker image uses `transformers` + `torch` (CPU wheels) to run Qwen2.5-0.5B. vLLM is **not** installed in the default image.
 
 **Why:**
-- Qwen2.5-0.5B is 0.5 B parameters — ~1 GB in BF16. A laptop CPU can handle it without paged-attention wizardry.
+- Qwen2.5-0.5B is 0.5 B parameters - ~1 GB in BF16. A laptop CPU can handle it without paged-attention wizardry.
 - vLLM's CPU backend (`vllm-cpu`) requires a separate wheel, has known issues with `VLLM_CPU_KVCACHE_SPACE` defaults, and ships behind the GPU version in feature parity. For a first-run demo on a cold laptop, that's a recipe for "doesn't work on grader's machine".
 - Transformers + `AutoModelForCausalLM.generate()` is universally supported and debuggable with one import.
 
-**Trade-off accepted:** Lower tokens/sec than vLLM (~20-60 tok/s vs ~200+), no continuous batching, no prefix caching. For a distributed demo with 2 workers and a few hundred prompts per batch, throughput is adequate and not the point of the exercise — the point is *distribution across Ray workers with clean job lifecycle*.
+**Trade-off accepted:** Lower tokens/sec than vLLM (~20-60 tok/s vs ~200+), no continuous batching, no prefix caching. For a distributed demo with 2 workers and a few hundred prompts per batch, throughput is adequate and not the point of the exercise - the point is *distribution across Ray workers with clean job lifecycle*.
 
 **Upgrade path:** Swap the UDF class to `vLLMEngineProcessorConfig` + `build_llm_processor`, add `device="cuda"` workers, and it's a drop-in. Documented in `inference/jobs/batch_infer.py` and `TECHNICAL_REPORT.md`.
 
@@ -75,10 +75,10 @@ unchanged.
 **Why:**
 | Option | Cold-start latency | Fits an HTTP API? |
 |---|---|---|
-| `RayJob` CRD (cluster-per-job) | 60–120s on kind + image pull | ❌ unusable as a demo |
+| `RayJob` CRD (cluster-per-job) | 60-120s on kind + image pull | ❌ unusable as a demo |
 | Long-running `RayCluster` + `JobSubmissionClient` | Sub-second dispatch | ✓ |
 
-A fresh RayCluster per API request would cost ~1-2 minutes of dead time on a laptop kind cluster — the grader would POST the curl and stare at a blank terminal. The long-running cluster pattern is also what production inference platforms do (Anyscale, OpenAI Batches, AWS Bedrock Batch).
+A fresh RayCluster per API request would cost ~1-2 minutes of dead time on a laptop kind cluster - the grader would POST the curl and stare at a blank terminal. The long-running cluster pattern is also what production inference platforms do (Anyscale, OpenAI Batches, AWS Bedrock Batch).
 
 **Trade-off accepted:** The RayCluster is always consuming resources even when idle. On kind that's ~6 CPU / 12 Gi RAM reserved. Mitigated by setting `minReplicas=maxReplicas=2` (no autoscaling thrash) and documenting `make down` to stop when not in use.
 
@@ -106,7 +106,7 @@ A fresh RayCluster per API request would cost ~1-2 minutes of dead time on a lap
 
 **Why:**
 - **401 vs 403**: Per RFC 7235 and the FastAPI maintainers' guidance ([discussion #9130](https://github.com/fastapi/fastapi/discussions/9130)), 401 = "authenticate please, include WWW-Authenticate" and 403 = "authenticated but not allowed". Missing/invalid API key is the former. FastAPI's default `APIKeyHeader(auto_error=True)` historically returned 403, which most 2025 guides call wrong. We opt out and return 401 ourselves.
-- **Constant-time compare**: Plain `==` short-circuits on the first mismatched byte, leaking the match-length via response timing. `hmac.compare_digest` does a byte-equal-time comparison — standard hardening for any shared-secret check.
+- **Constant-time compare**: Plain `==` short-circuits on the first mismatched byte, leaking the match-length via response timing. `hmac.compare_digest` does a byte-equal-time comparison - standard hardening for any shared-secret check.
 - **Hardcoded vs dynamic keys**: The exercise specifies a hardcoded key. We load it from an environment variable (`API_KEY`) via `pydantic-settings`, typed as `SecretStr` so it's redacted from logs and exception reprs. Production would swap this for a `keys` table or OAuth2.
 
 ### 2.7 OpenAI-shaped response, with pragmatic extensions
@@ -128,8 +128,8 @@ A fresh RayCluster per API request would cost ~1-2 minutes of dead time on a lap
 **Decision:** API image uses a multi-stage Dockerfile: `python:3.11-slim` builder stage with `uv sync --locked`, runtime stage with only the `.venv` copied over, non-root user UID 10001, direct `uvicorn` in CMD (no gunicorn).
 
 **Why:**
-- `uv` is ~10× faster than `pip` and produces locked dependency resolutions (`uv.lock`) that pin transitive deps — reproducibility wins.
-- Multi-stage keeps build tooling (uv, gcc) out of the runtime image — smaller surface, fewer CVEs.
+- `uv` is ~10× faster than `pip` and produces locked dependency resolutions (`uv.lock`) that pin transitive deps - reproducibility wins.
+- Multi-stage keeps build tooling (uv, gcc) out of the runtime image - smaller surface, fewer CVEs.
 - Non-root UID is a basic container hardening requirement. `pod-security-admission` in `restricted` mode would reject a root container.
 - `gunicorn` adds no value on Kubernetes where horizontal scaling is handled by `Deployment.replicas`. One uvicorn process per pod is the 2025 canonical pattern.
 
@@ -148,15 +148,15 @@ A fresh RayCluster per API request would cost ~1-2 minutes of dead time on a lap
 - Two separate minimal charts total **~500 MB** (Prometheus ~300 MB, Grafana ~150 MB) because sub-components are explicitly disabled: no Alertmanager, no Pushgateway, no Node Exporter, no Kube State Metrics, no persistence.
 - The integration the Ray dashboard actually needs (`RAY_PROMETHEUS_HOST`, `RAY_GRAFANA_HOST`, `RAY_GRAFANA_IFRAME_HOST`) only requires Prometheus + Grafana + a scrape config + dashboard provisioning. Everything else the larger chart would ship is dead weight for this specific integration.
 
-**Scrape config:** uses `kubernetes_sd_configs` pod discovery in the `ray` namespace, keeps only pods labeled by the KubeRay operator (`ray.io/cluster`), promotes `ray.io/cluster` and `ray.io/node-type` to Prometheus labels, rewrites `__address__` to the Ray metrics port (`:8080` — set via `rayStartParams.metrics-export-port`), and labels the series with pod name as `instance`. Committed in `k8s/monitoring/prometheus-values.yaml`.
+**Scrape config:** uses `kubernetes_sd_configs` pod discovery in the `ray` namespace, keeps only pods labeled by the KubeRay operator (`ray.io/cluster`), promotes `ray.io/cluster` and `ray.io/node-type` to Prometheus labels, rewrites `__address__` to the Ray metrics port (`:8080` - set via `rayStartParams.metrics-export-port`), and labels the series with pod name as `instance`. Committed in `k8s/monitoring/prometheus-values.yaml`.
 
-**Dashboard provisioning:** rather than hand-maintaining the Ray dashboard JSON in the repo (hundreds of KB, drifts from the running Ray version), `scripts/install-monitoring.sh` extracts the default dashboards live from `/tmp/ray/session_latest/metrics/grafana/dashboards/` on the running Ray head pod via `kubectl exec`, creates a ConfigMap labeled `grafana_dashboard=1`, and the Grafana sidecar auto-imports them. This guarantees the dashboard queries match the exact metric labels the running Ray version emits — zero version drift.
+**Dashboard provisioning:** rather than hand-maintaining the Ray dashboard JSON in the repo (hundreds of KB, drifts from the running Ray version), `scripts/install-monitoring.sh` extracts the default dashboards live from `/tmp/ray/session_latest/metrics/grafana/dashboards/` on the running Ray head pod via `kubectl exec`, creates a ConfigMap labeled `grafana_dashboard=1`, and the Grafana sidecar auto-imports them. This guarantees the dashboard queries match the exact metric labels the running Ray version emits - zero version drift.
 
-**`RAY_GRAFANA_IFRAME_HOST` subtlety:** the Ray dashboard embeds Grafana panels as `<iframe src="...">`. The `src` URL is resolved by the **browser**, not the cluster — so it must be the port-forward target (`http://127.0.0.1:3000`), not the in-cluster DNS name. `RAY_GRAFANA_HOST` is separately used by the Ray head's backend health checks and IS the in-cluster DNS (`http://grafana.monitoring.svc.cluster.local:80`). Getting this distinction wrong produces a broken embed with no error message.
+**`RAY_GRAFANA_IFRAME_HOST` subtlety:** the Ray dashboard embeds Grafana panels as `<iframe src="...">`. The `src` URL is resolved by the **browser**, not the cluster - so it must be the port-forward target (`http://127.0.0.1:3000`), not the in-cluster DNS name. `RAY_GRAFANA_HOST` is separately used by the Ray head's backend health checks and IS the in-cluster DNS (`http://grafana.monitoring.svc.cluster.local:80`). Getting this distinction wrong produces a broken embed with no error message.
 
 **Trade-off accepted:** the monitoring stack is **optional**. If it's not installed, the Ray dashboard hides the Metrics tab but everything else works. The four `RAY_*` env vars on the head container cost nothing when the target services don't exist. This keeps the core demo path unaffected for graders who don't want to bring up monitoring.
 
-**Production upgrade path:** swap for `kube-prometheus-stack` with proper persistence, Alertmanager wired to PagerDuty/Slack, `node-exporter` + `kube-state-metrics` for cluster-level metrics, and Grafana Loki + Tempo for logs and traces. The scrape config and the Ray dashboard provisioning logic are reusable as-is — only the chart choice changes. The full monitoring plan (alert thresholds, dashboards, runbooks) lives in `docs/TECHNICAL_REPORT.md §5`.
+**Production upgrade path:** swap for `kube-prometheus-stack` with proper persistence, Alertmanager wired to PagerDuty/Slack, `node-exporter` + `kube-state-metrics` for cluster-level metrics, and Grafana Loki + Tempo for logs and traces. The scrape config and the Ray dashboard provisioning logic are reusable as-is - only the chart choice changes. The full monitoring plan (alert thresholds, dashboards, runbooks) lives in `docs/TECHNICAL_REPORT.md §5`.
 
 ---
 
@@ -178,27 +178,27 @@ A fresh RayCluster per API request would cost ~1-2 minutes of dead time on a lap
 }
 ```
 
-Errors for individual prompts populate `error` and leave `response` as `null` — mirroring Ray Data's row-level error capture.
+Errors for individual prompts populate `error` and leave `response` as `null` - mirroring Ray Data's row-level error capture.
 
 **Storage layout:** `/data/batches/<batch_id>/results.jsonl` on a shared `hostPath` PVC. The Ray workers own the write; the API pod owns the read.
 
 **Why JSONL on a PVC, not Postgres or `/tmp`:**
 - `/tmp` on the API pod is not visible to Ray workers. Cross-pod storage needs a PVC.
 - Full model output in Postgres would bloat the database and make `pg_dump` painful at scale.
-- JSONL is streaming-friendly — `StreamingResponse` + an async generator keep memory flat regardless of batch size.
+- JSONL is streaming-friendly - `StreamingResponse` + an async generator keep memory flat regardless of batch size.
 - Mirrors how OpenAI Batches and AWS Bedrock Batch actually ship results (file download).
 
 **Upgrade path (production):** Swap `hostPath` for S3 / MinIO / EFS. The API then returns a pre-signed URL instead of streaming. See `TECHNICAL_REPORT.md` §4.
 
 ### 3.2 Job Management: status and results retrieval
 
-**Status (`GET /v1/batches/{id}`)** returns the batch object with the current `status`, progress counts, and timestamps — read directly from Postgres.
+**Status (`GET /v1/batches/{id}`)** returns the batch object with the current `status`, progress counts, and timestamps - read directly from Postgres.
 
 A background task in the API (`asyncio.create_task` on app startup) polls Ray for each in-progress batch every 5s via `JobSubmissionClient.get_job_status`, mapping Ray states to OpenAI vocabulary and updating Postgres. This keeps the hot-path `GET` fast (single Postgres `SELECT`) without blocking on Ray.
 
 **Results (`GET /v1/batches/{id}/results`)** streams the `results.jsonl` file back as `application/x-ndjson` using `StreamingResponse` + `aiofiles` line-by-line read. Returns `409 Conflict` if the batch is not yet `completed` (explicit contract; OpenAI itself returns 200 + incomplete object, either is defensible).
 
-**Cancellation:** Not in the exercise scope, but the design supports it — a `DELETE /v1/batches/{id}` route would call `client.stop_job(ray_job_id)` and update the row to `cancelled`.
+**Cancellation:** Not in the exercise scope, but the design supports it - a `DELETE /v1/batches/{id}` route would call `client.stop_job(ray_job_id)` and update the row to `cancelled`.
 
 ### 3.3 Load Balancing: how Ray distributes work, and the issues
 
@@ -206,12 +206,12 @@ A background task in the API (`asyncio.create_task` on app startup) polls Ray fo
 1. `ray.data.read_json(input.jsonl)` creates a Dataset partitioned into blocks (one per file by default; we repartition to `num_workers * 2` for better parallelism).
 2. `ds.map_batches(QwenPredictor, concurrency=2, batch_size=16)` spins up an actor pool with `concurrency=2` long-lived actors, one per Ray worker pod. Each actor loads Qwen **once** in `__init__` and runs inference on successive batches in `__call__`.
 3. Ray's scheduler places actors using the resource requests declared on the `RayCluster` worker group (CPU in our case; `num_gpus=1` in production).
-4. Blocks are streamed through the pipeline with backpressure — if actors are slow, upstream reads throttle automatically.
+4. Blocks are streamed through the pipeline with backpressure - if actors are slow, upstream reads throttle automatically.
 5. Results are written block-by-block to the output Dataset and finally materialized as JSONL.
 
 **Issues I see:**
 
-1. **Cold-start dominates small batches.** Actor init loads a 1 GB model — for a batch of 2 prompts (like the exercise's curl example), 95% of the wall time is model load, not inference. Mitigations: (a) use a long-running cluster (done), (b) batch prompts aggressively on the caller side, (c) use `concurrency=(1, 2)` autoscaling so idle workers release actors.
+1. **Cold-start dominates small batches.** Actor init loads a 1 GB model - for a batch of 2 prompts (like the exercise's curl example), 95% of the wall time is model load, not inference. Mitigations: (a) use a long-running cluster (done), (b) batch prompts aggressively on the caller side, (c) use `concurrency=(1, 2)` autoscaling so idle workers release actors.
 
 2. **Straggler tail latency.** Ray Data waits for the slowest block. A single prompt that triggers `max_tokens=512` while others stop at `max_tokens=20` drags the whole batch. Mitigations: (a) tune `batch_size` smaller to limit straggler blast radius, (b) set a per-prompt timeout in the UDF.
 
@@ -219,35 +219,35 @@ A background task in the API (`asyncio.create_task` on app startup) polls Ray fo
 
 4. **No automatic retry on worker OOM.** If a Ray worker OOMs mid-block, the block fails and Ray Data captures the error but does not redistribute the work to other workers (unlike Spark). Mitigations: size limits generously (`memory: 6Gi` minimum for Qwen2.5-0.5B on CPU), set `max_restarts` on the actor, instrument for OOMKilled.
 
-5. **`ray.data.llm` + CPU backend fragility (not used here for this reason).** The newer `ray.data.llm.vLLMEngineProcessorConfig` gives ~2× throughput via disaggregated tokenize/engine/detokenize stages, but the vLLM CPU wheel is brittle and version-sensitive — so this codebase uses the simpler `map_batches` + Transformers path and documents vLLM as the GPU upgrade.
+5. **`ray.data.llm` + CPU backend fragility (not used here for this reason).** The newer `ray.data.llm.vLLMEngineProcessorConfig` gives ~2× throughput via disaggregated tokenize/engine/detokenize stages, but the vLLM CPU wheel is brittle and version-sensitive - so this codebase uses the simpler `map_batches` + Transformers path and documents vLLM as the GPU upgrade.
 
 ### 3.4 KPIs: metrics that matter for production operations
 
 **SLI / SLO layer:**
-- **Batch acceptance rate** — % of `POST /v1/batches` that return 2xx. SLO: ≥ 99.9% excluding invalid payloads.
-- **Time-to-queue** (p50 / p95) — wall time from HTTP request start to `status=queued` in Postgres. SLO: p95 < 300ms.
-- **Time-to-first-token per batch** — wall time from `submit_job` to the first row written to `results.jsonl`. SLO: p95 < 30s for warm cluster.
-- **Time-to-complete per batch** (p50 / p95 / p99 per prompt-count bucket) — the core throughput SLI. SLO depends on batch size class.
-- **End-to-end batch success rate** — % of submitted batches that reach `status=completed`. SLO: ≥ 99%.
+- **Batch acceptance rate** - % of `POST /v1/batches` that return 2xx. SLO: ≥ 99.9% excluding invalid payloads.
+- **Time-to-queue** (p50 / p95) - wall time from HTTP request start to `status=queued` in Postgres. SLO: p95 < 300ms.
+- **Time-to-first-token per batch** - wall time from `submit_job` to the first row written to `results.jsonl`. SLO: p95 < 30s for warm cluster.
+- **Time-to-complete per batch** (p50 / p95 / p99 per prompt-count bucket) - the core throughput SLI. SLO depends on batch size class.
+- **End-to-end batch success rate** - % of submitted batches that reach `status=completed`. SLO: ≥ 99%.
 
 **Throughput layer:**
-- Prompts per second (global) — overall pipeline throughput.
-- Tokens per second (input + output) — the useful throughput for capacity planning.
-- Actor utilization (% of wall time actors spent in `__call__` vs idle) — tells you if you're underscheduled or scheduler-bound.
-- GPU utilization + GPU memory (when on GPU) — from DCGM exporter.
+- Prompts per second (global) - overall pipeline throughput.
+- Tokens per second (input + output) - the useful throughput for capacity planning.
+- Actor utilization (% of wall time actors spent in `__call__` vs idle) - tells you if you're underscheduled or scheduler-bound.
+- GPU utilization + GPU memory (when on GPU) - from DCGM exporter.
 
 **Reliability layer:**
-- Failed prompt rate per batch — some failures are model errors (safe), others are infrastructure (alertable).
-- Ray worker pod restart count — OOMKills and crashes.
-- RayCluster `status.state != ready` duration — the platform-level availability SLI.
+- Failed prompt rate per batch - some failures are model errors (safe), others are infrastructure (alertable).
+- Ray worker pod restart count - OOMKills and crashes.
+- RayCluster `status.state != ready` duration - the platform-level availability SLI.
 
 **Cost layer:**
-- `$ per 1M output tokens` — standard LLM unit economics. Tracked daily.
-- Cluster idle time — ratio of wall time where actors serve no batches. Key for right-sizing.
+- `$ per 1M output tokens` - standard LLM unit economics. Tracked daily.
+- Cluster idle time - ratio of wall time where actors serve no batches. Key for right-sizing.
 
 **Business layer:**
-- Batches per day by model name — capacity-planning input.
-- p95 batch size (prompt count) — shapes the UDF's `batch_size` tuning.
+- Batches per day by model name - capacity-planning input.
+- p95 batch size (prompt count) - shapes the UDF's `batch_size` tuning.
 
 **Instrumentation path:**
 - **FastAPI** exposes `/metrics` via `prometheus-fastapi-instrumentator` (HTTP latency histograms, request counts, in-flight).
@@ -263,21 +263,21 @@ A background task in the API (`asyncio.create_task` on app startup) polls Ray fo
 
 See `TECHNICAL_REPORT.md` §5 for the full monitoring plan with Grafana dashboard sketches.
 
-### 3.5 Integration: KubeRay ↔ Kubernetes — strengths and limitations
+### 3.5 Integration: KubeRay ↔ Kubernetes - strengths and limitations
 
 **Strengths:**
 1. **CRD-native lifecycle.** `RayCluster`, `RayJob`, `RayService` are first-class CRDs with operator-managed reconciliation. `kubectl get rayclusters` Just Works. `kubectl describe` shows Ray-specific state. Aligns with GitOps workflows.
 2. **Service discovery via Kubernetes DNS.** The operator creates `<cluster>-head-svc` automatically. No manual service definitions, no hard-coded IPs, no environment-specific URLs.
-3. **RBAC integration.** RayCluster uses K8s ServiceAccounts; the operator itself respects RBAC. In KubeRay v1.6 + Ray v2.55, Kubernetes RBAC identities can be mapped to Ray token auth — a real production security story.
+3. **RBAC integration.** RayCluster uses K8s ServiceAccounts; the operator itself respects RBAC. In KubeRay v1.6 + Ray v2.55, Kubernetes RBAC identities can be mapped to Ray token auth - a real production security story.
 4. **Autoscaling via K8s primitives.** `enableInTreeAutoscaling: true` plus cluster-autoscaler-aware resource requests lets Ray scale out by adding worker pods, which the node autoscaler reacts to. No custom control loops.
-5. **Pod-shaped workloads.** Ray head and workers are regular pods, so they benefit from `PodDisruptionBudget`, `PriorityClass`, `tolerations`, `nodeSelector`, `topologySpreadConstraints`, `affinity` — every K8s scheduling primitive is available.
+5. **Pod-shaped workloads.** Ray head and workers are regular pods, so they benefit from `PodDisruptionBudget`, `PriorityClass`, `tolerations`, `nodeSelector`, `topologySpreadConstraints`, `affinity` - every K8s scheduling primitive is available.
 6. **Observability integration.** Ray metrics are exposed on `:8080` in Prometheus format; kube-state-metrics and node-exporter cover the pod/node layer. Drop into any existing K8s monitoring stack with no custom glue.
 
 **Limitations:**
 1. **Operator is a single point of failure for reconciliation.** If the KubeRay operator pod goes down, existing RayClusters keep running but you can't create new ones or heal drift. Mitigated with `replicas: 2` and a leader election (KubeRay v1.3+).
 2. **Cold-start cost is high.** `RayJob` CRD creating a fresh cluster per job pays the full image-pull + Ray-bootstrap cost (~60-120s on kind). For latency-sensitive APIs you must deploy a long-running `RayCluster` and submit to it (which we do).
-3. **kind-specific pain points** — no LoadBalancer services out of the box (must use NodePort or port-forward), custom images need `kind load docker-image`, storage is `ReadWriteOnce`-only by default (we work around with `hostPath` + `extraMounts`).
-4. **Version compatibility is narrow.** KubeRay v1.6 requires Ray ≥ 2.38; Ray 2.11–2.37 has a dashboard-agent hang bug that breaks readiness probes. You have to read the compatibility matrix before picking versions.
+3. **kind-specific pain points** - no LoadBalancer services out of the box (must use NodePort or port-forward), custom images need `kind load docker-image`, storage is `ReadWriteOnce`-only by default (we work around with `hostPath` + `extraMounts`).
+4. **Version compatibility is narrow.** KubeRay v1.6 requires Ray ≥ 2.38; Ray 2.11-2.37 has a dashboard-agent hang bug that breaks readiness probes. You have to read the compatibility matrix before picking versions.
 5. **No native batch queueing.** If you submit 100 jobs at once they all land on the same long-running cluster and fight for actors. Real batch platforms sit Kueue or a custom scheduler in front. Out of scope for this take-home but called out in the report.
 6. **`ReadWriteOnce` storage constrains multi-pod write patterns.** On real clouds you need EFS / Azure Files / Filestore for RWX. Local-path provisioner is RWO only.
 7. **Limited native quota / tenancy.** KubeRay itself has no concept of "user X can spend N GPU-hours." Would need an admission webhook or a thicker proxy layer.
@@ -311,10 +311,10 @@ The take-home uses a single hardcoded API key. That's explicitly in scope. A pro
 
 - Per-tenant API keys stored hashed (`argon2id` or `bcrypt`) in Postgres, with rotation, expiry, and audit logs.
 - mTLS or JWT-signed requests between the proxy and Ray to prevent in-cluster lateral movement.
-- Ray token authentication (`RAY_AUTH_TOKEN`) enabled — KubeRay v1.6 supports mapping K8s RBAC to Ray tokens.
+- Ray token authentication (`RAY_AUTH_TOKEN`) enabled - KubeRay v1.6 supports mapping K8s RBAC to Ray tokens.
 - Input content filtering (prompt injection, PII redaction) before dispatching to the LLM.
 - Output content filtering for PII or unsafe content.
-- Rate limiting per API key (out of scope here — would use `slowapi` or an envoy filter).
+- Rate limiting per API key (out of scope here - would use `slowapi` or an envoy filter).
 - Structured audit logging of every prompt + generation for compliance review.
 
 These are intentionally out of scope for the exercise. `TECHNICAL_REPORT.md` §6 lists them as the "path to production" checklist.

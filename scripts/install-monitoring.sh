@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # -------------------------------------------------------------------------
-# install-monitoring.sh — Bring up Prometheus + Grafana + Ray dashboard
+# install-monitoring.sh - Bring up Prometheus + Grafana + Ray dashboard
 # auto-provisioning for the existing RayCluster.
 #
-# Prerequisites (must already be running — script does NOT set these up):
+# Prerequisites (must already be running - script does NOT set these up):
 #   - kind cluster with the RayCluster healthy (`make up` has completed)
 #   - kubectl current-context points at the kind cluster
 #   - helm installed
@@ -17,7 +17,7 @@
 #      a ConfigMap (labeled for Grafana sidecar auto-import)
 #   5. Restart the Ray head pod so it picks up the RAY_PROMETHEUS_HOST,
 #      RAY_GRAFANA_HOST, RAY_GRAFANA_IFRAME_HOST env vars (which are
-#      declared in k8s/raycluster/raycluster.yaml — re-apply it first
+#      declared in k8s/raycluster/raycluster.yaml - re-apply it first
 #      if those env vars aren't set on the running pod)
 #
 # Idempotent: re-running upgrades the helm releases, refreshes the
@@ -39,7 +39,7 @@ die()  { printf "\033[0;31m[monitoring]\033[0m %s\n" "$*" >&2; exit 1; }
 
 # ─── 0. Pre-flight checks ───────────────────────────────────────────────
 for t in kubectl helm curl; do
-  command -v "$t" >/dev/null 2>&1 || die "$t not found — run scripts/setup.sh first"
+  command -v "$t" >/dev/null 2>&1 || die "$t not found - run scripts/setup.sh first"
 done
 
 log "Verifying RayCluster is healthy..."

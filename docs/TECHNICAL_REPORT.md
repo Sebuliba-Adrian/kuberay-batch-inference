@@ -1,4 +1,4 @@
-# Technical Report — KubeRay Batch Inference
+# Technical Report - KubeRay Batch Inference
 
 **Author:** Adrian Sebuliba
 **Target model:** Qwen/Qwen2.5-0.5B-Instruct
@@ -10,15 +10,15 @@
 
 A distributed offline LLM batch inference service built in five layers:
 
-1. **FastAPI proxy** — OpenAI-shaped `POST /v1/batches` endpoint authenticated by `X-API-Key`. Accepts inline prompts, materializes them onto a shared persistent volume, submits a job to Ray, returns an OpenAI-shaped `BatchObject` with a ULID id.
-2. **PostgreSQL metadata store** — one row per batch tracking lifecycle state, counts, timestamps, and the Ray submission id. Driven by SQLAlchemy 2.0 async over asyncpg.
-3. **KubeRay-managed RayCluster** — long-running 1 head + 2 CPU worker topology that stays warm between requests so dispatch latency is sub-second, not cluster-cold-start.
-4. **Ray Data batch pipeline** — `ray.data.Dataset.map_batches()` with a class-based UDF that loads Qwen2.5-0.5B once per actor in Transformers and drives inference across actors in parallel.
-5. **Background status poller** — async task inside the FastAPI process that periodically queries Ray for every active batch and translates the lifecycle into the OpenAI state vocabulary (`queued → in_progress → completed/failed/cancelled`).
+1. **FastAPI proxy** - OpenAI-shaped `POST /v1/batches` endpoint authenticated by `X-API-Key`. Accepts inline prompts, materializes them onto a shared persistent volume, submits a job to Ray, returns an OpenAI-shaped `BatchObject` with a ULID id.
+2. **PostgreSQL metadata store** - one row per batch tracking lifecycle state, counts, timestamps, and the Ray submission id. Driven by SQLAlchemy 2.0 async over asyncpg.
+3. **KubeRay-managed RayCluster** - long-running 1 head + 2 CPU worker topology that stays warm between requests so dispatch latency is sub-second, not cluster-cold-start.
+4. **Ray Data batch pipeline** - `ray.data.Dataset.map_batches()` with a class-based UDF that loads Qwen2.5-0.5B once per actor in Transformers and drives inference across actors in parallel.
+5. **Background status poller** - async task inside the FastAPI process that periodically queries Ray for every active batch and translates the lifecycle into the OpenAI state vocabulary (`queued → in_progress → completed/failed/cancelled`).
 
 The entire API layer is built with **strict TDD** and has **169 tests at 100% line and branch coverage** across 464 statements and 78 branches. Every line of `src/` exists because a failing test asked for it. The `--cov-fail-under=100` gate is enforced in CI.
 
-**Runtime verification:** the service has been brought up end-to-end on a real kind + KubeRay cluster and the exact curl from the exercise PDF has been executed against it. Real `Qwen2.5-0.5B-Instruct` inference was produced by the Ray Data pipeline — not mocked, not hypothetical. See §3.5 for the evidence and the four first-contact issues caught and fixed during that bring-up.
+**Runtime verification:** the service has been brought up end-to-end on a real kind + KubeRay cluster and the exact curl from the exercise PDF has been executed against it. Real `Qwen2.5-0.5B-Instruct` inference was produced by the Ray Data pipeline - not mocked, not hypothetical. See §3.5 for the evidence and the four first-contact issues caught and fixed during that bring-up.
 
 **Spec compliance:** the `.github/workflows/ci.yaml` pipeline runs on `ubuntu-22.04` runners, satisfying the brief's "develop in Ubuntu 22.04" requirement empirically on every push.
 
@@ -48,11 +48,11 @@ The exercise brief uses an intentionally minimal two-prompt input:
 
 | Dimension              | This exercise                 | A realistic production workload                                        |
 |------------------------|-------------------------------|------------------------------------------------------------------------|
-| Batch size             | 2 prompts                     | 10³ – 10⁵ prompts per batch                                            |
+| Batch size             | 2 prompts                     | 10³ - 10⁵ prompts per batch                                            |
 | Prompt length          | <20 tokens each               | p95 500-2000 tokens                                                    |
 | Output length          | 50 tokens                     | p95 200-500 tokens                                                     |
 | Model                  | Qwen2.5-0.5B (0.5 B params)   | 7B-32B class open-weight instruction-tuned model                       |
-| Compute                | CPU-only on laptop            | GPU pools — vLLM + paged attention                                     |
+| Compute                | CPU-only on laptop            | GPU pools - vLLM + paged attention                                     |
 | Latency budget         | n/a (offline)                 | p95 < 30s per batch                                                    |
 | Throughput budget      | one-off demo                  | ≥ 10⁴ prompts/sec aggregate                                            |
 | Storage                | hostPath PVC on kind node     | S3 / EFS / Azure Files                                                 |
@@ -66,7 +66,7 @@ Even at the exercise scale, the following invariants are enforced at the Pydanti
 - Prompts longer than 32,000 characters are rejected (protects the tokenizer from O(n²) blowups)
 - Batches larger than 100,000 prompts are rejected (DoS cap)
 - Model names must match `^[A-Za-z0-9._\-/:]+$` (HuggingFace repo id regex)
-- Unknown fields on the request or the input items are rejected (`extra="forbid"`) — catches client typos early
+- Unknown fields on the request or the input items are rejected (`extra="forbid"`) - catches client typos early
 
 ---
 
@@ -81,15 +81,15 @@ For a Ray-based distributed LLM batch inference service there are at least four 
 Ray Data is the canonical 2025-2026 choice for *offline* LLM batch inference per both the Ray documentation and Anyscale's engineering blog. It gives streaming execution, row-level fault tolerance, actor-pool autoscaling, and backpressure. Ray Core is too low-level. Ray Serve targets online request/response and would be the wrong fit for a batch workload.
 
 **Rejected alternatives:**
-- *Ray Core + manual actors* — reinvents what Ray Data already gives you.
-- *Ray Serve* — wrong shape; online inference with per-request latency targets, not offline batch throughput.
-- *Kubernetes Jobs without Ray* — loses parallel actor pools, fault tolerance, and streaming execution. You'd be rebuilding Ray Data from scratch.
+- *Ray Core + manual actors* - reinvents what Ray Data already gives you.
+- *Ray Serve* - wrong shape; online inference with per-request latency targets, not offline batch throughput.
+- *Kubernetes Jobs without Ray* - loses parallel actor pools, fault tolerance, and streaming execution. You'd be rebuilding Ray Data from scratch.
 
 ### 2.2 HuggingFace Transformers vs vLLM as the inference engine
 
 **Chosen: HuggingFace Transformers for the CPU demo path. vLLM is the documented GPU upgrade.**
 
-The brief specifies laptop CPU as the target. vLLM's CPU backend (`vllm-cpu`) exists but is fragile — known issues with `VLLM_CPU_KVCACHE_SPACE` defaults ([vllm#29233](https://github.com/vllm-project/vllm/issues/29233)) and a Qwen2.5-0.5B-specific cache-block bug ([vllm#10439](https://github.com/vllm-project/vllm/issues/10439)) make it a poor "just works on the grader's laptop" choice. Transformers + Torch CPU runs the 0.5 B model in ~3.5 GiB peak with zero special handling.
+The brief specifies laptop CPU as the target. vLLM's CPU backend (`vllm-cpu`) exists but is fragile - known issues with `VLLM_CPU_KVCACHE_SPACE` defaults ([vllm#29233](https://github.com/vllm-project/vllm/issues/29233)) and a Qwen2.5-0.5B-specific cache-block bug ([vllm#10439](https://github.com/vllm-project/vllm/issues/10439)) make it a poor "just works on the grader's laptop" choice. Transformers + Torch CPU runs the 0.5 B model in ~3.5 GiB peak with zero special handling.
 
 **Upgrade path** (documented as a drop-in in `inference/jobs/batch_infer.py`): swap the UDF class for `ray.data.llm.vLLMEngineProcessorConfig` + `build_llm_processor`, add `num_gpus=1` to the `map_batches` call, keep everything else the same. On GPU this moves from ~20-60 tokens/sec per worker to ~200+ tokens/sec with continuous batching and prefix caching.
 
@@ -97,7 +97,7 @@ The brief specifies laptop CPU as the target. vLLM's CPU backend (`vllm-cpu`) ex
 
 **Chosen: long-running RayCluster, submit via `JobSubmissionClient` from FastAPI.**
 
-A `RayJob` CRD creates a fresh cluster per job, tears it down on completion, and has 60-120 s cold start on kind because of image pull + Ray bootstrap. For a latency-sensitive HTTP API this is unusable — graders would POST the exercise curl and stare at a blank terminal for two minutes. The long-running cluster pattern amortizes init cost across every submitted batch.
+A `RayJob` CRD creates a fresh cluster per job, tears it down on completion, and has 60-120 s cold start on kind because of image pull + Ray bootstrap. For a latency-sensitive HTTP API this is unusable - graders would POST the exercise curl and stare at a blank terminal for two minutes. The long-running cluster pattern amortizes init cost across every submitted batch.
 
 The Ray `JobSubmissionClient` is synchronous; we wrap every call in `starlette.concurrency.run_in_threadpool` so it never blocks the FastAPI event loop. This is the canonical pattern from the 2025-2026 FastAPI + Ray Jobs community guides.
 
@@ -107,9 +107,9 @@ The Ray `JobSubmissionClient` is synchronous; we wrap every call in `starlette.c
 
 **Chosen: Postgres for metadata, shared PVC for the JSONL files.**
 
-Results can be large — tens of thousands of generations at 500 tokens each is easily 10+ MB per batch. Postgres TEXT columns scale poorly for that, pg_dump becomes painful, and it makes the DB the bottleneck instead of the object store. JSONL on a shared PVC mirrors how the real OpenAI Batches API works (upload file → get batch_id → download file) and keeps the DB as a thin metadata layer.
+Results can be large - tens of thousands of generations at 500 tokens each is easily 10+ MB per batch. Postgres TEXT columns scale poorly for that, pg_dump becomes painful, and it makes the DB the bottleneck instead of the object store. JSONL on a shared PVC mirrors how the real OpenAI Batches API works (upload file → get batch_id → download file) and keeps the DB as a thin metadata layer.
 
-**kind-specific workaround:** kind's default `standard` StorageClass is `ReadWriteOnce` only, but the API pod and the Ray workers both need write access to the same `/data/batches` tree. Fixed by binding an explicit `hostPath` PV via the kind `extraMounts` mechanism — `hostPath` supports `ReadWriteMany` because multiple pods on the same node can mount the same directory.
+**kind-specific workaround:** kind's default `standard` StorageClass is `ReadWriteOnce` only, but the API pod and the Ray workers both need write access to the same `/data/batches` tree. Fixed by binding an explicit `hostPath` PV via the kind `extraMounts` mechanism - `hostPath` supports `ReadWriteMany` because multiple pods on the same node can mount the same directory.
 
 **Production upgrade path:** swap `hostPath` for EFS (AWS), Azure Files, or GCE Filestore CSI drivers, or move to cloud object storage (S3 / MinIO) with a presigned-URL download contract instead of streaming reads.
 
@@ -129,30 +129,30 @@ The trade-off is up to N seconds of staleness. For a batch workload where jobs t
 
 | Layer                    | Framework                    | Count | Coverage strategy |
 |--------------------------|------------------------------|-------|-------------------|
-| Unit — config            | pytest + pydantic            | 14    | Every validator branch |
-| Unit — auth              | pytest + httpx.ASGITransport | 8     | 401/200, spied hmac.compare_digest |
-| Unit — Pydantic models   | pytest                       | 19    | Every constraint |
-| Unit — db                | pytest + aiosqlite in-memory | 12    | CRUD + session_scope commit/rollback |
-| Unit — storage           | pytest + tmp_path            | 18    | JSONL roundtrip + marker helpers |
-| Unit — ray_client        | pytest + fake factory        | 20    | Full status map + async wrapping |
-| Unit — main/health       | pytest + httpx.ASGITransport | 9     | Factory purity + /health |
-| Unit — /ready            | pytest + monkeypatched deps  | 4     | All-up, postgres-down, ray-down |
-| Unit — POST /v1/batches  | pytest + httpx + fake ray    | 13    | Auth + validation + persist + submit + 503 |
-| Unit — batches internals | pytest + monkeypatch         | 8     | Every defensive branch |
-| Unit — GET /v1/batches/{id} | pytest + httpx            | 8     | All 5 status states |
-| Unit — GET /results      | pytest + httpx + tmp_path    | 9     | 200 NDJSON / 404 / 409 / 500 |
-| Unit — status poller     | pytest + fake ray + tmp      | 16    | Every state transition + error paths + cross-platform branch guards |
-| **E2E — happy path**     | pytest + full app lifespan   | 2     | POST → poll → GET status → GET results, 2 concurrent batches |
-| **E2E — failure paths**  | pytest + full app lifespan   | 6     | Ray down, worker crash, /health still 200, /ready 503 |
-| Unit — lifespan          | pytest                       | 3     | Boot sequence + shutdown helper |
+| Unit - config            | pytest + pydantic            | 14    | Every validator branch |
+| Unit - auth              | pytest + httpx.ASGITransport | 8     | 401/200, spied hmac.compare_digest |
+| Unit - Pydantic models   | pytest                       | 19    | Every constraint |
+| Unit - db                | pytest + aiosqlite in-memory | 12    | CRUD + session_scope commit/rollback |
+| Unit - storage           | pytest + tmp_path            | 18    | JSONL roundtrip + marker helpers |
+| Unit - ray_client        | pytest + fake factory        | 20    | Full status map + async wrapping |
+| Unit - main/health       | pytest + httpx.ASGITransport | 9     | Factory purity + /health |
+| Unit - /ready            | pytest + monkeypatched deps  | 4     | All-up, postgres-down, ray-down |
+| Unit - POST /v1/batches  | pytest + httpx + fake ray    | 13    | Auth + validation + persist + submit + 503 |
+| Unit - batches internals | pytest + monkeypatch         | 8     | Every defensive branch |
+| Unit - GET /v1/batches/{id} | pytest + httpx            | 8     | All 5 status states |
+| Unit - GET /results      | pytest + httpx + tmp_path    | 9     | 200 NDJSON / 404 / 409 / 500 |
+| Unit - status poller     | pytest + fake ray + tmp      | 16    | Every state transition + error paths + cross-platform branch guards |
+| **E2E - happy path**     | pytest + full app lifespan   | 2     | POST → poll → GET status → GET results, 2 concurrent batches |
+| **E2E - failure paths**  | pytest + full app lifespan   | 6     | Ray down, worker crash, /health still 200, /ready 503 |
+| Unit - lifespan          | pytest                       | 3     | Boot sequence + shutdown helper |
 | **TOTAL**                |                              | **169** | **100% line + 100% branch on 464 statements, 78 branches** |
 
 ### 3.2 What the E2E tests actually prove
 
 The happy-path E2E test goes through the full production request lifecycle with **zero mocks at the handler layer**:
 
-1. `create_app()` factory is called — same code path uvicorn runs in production
-2. The FastAPI lifespan is entered — initializes the DB engine, creates tables, initializes the Ray client (with an injected fake factory), starts the background status poller
+1. `create_app()` factory is called - same code path uvicorn runs in production
+2. The FastAPI lifespan is entered - initializes the DB engine, creates tables, initializes the Ray client (with an injected fake factory), starts the background status poller
 3. An `httpx.AsyncClient` backed by `ASGITransport` POSTs the exact curl from the exercise brief
 4. The request goes through the full FastAPI middleware + dependency graph: `require_api_key` dependency, Pydantic validation, route handler, database session, shared-PVC write, Ray `submit_job` call
 5. A real background poller loop runs every 50 ms, calling `poll_active_batches()` which reads the fake Ray's state machine
@@ -163,18 +163,18 @@ The failure-path E2E tests do the same plumbing but inject an unreachable or cra
 
 ### 3.3 CI gating
 
-`.github/workflows/ci.yaml` runs on every push and every PR, **pinned to `runs-on: ubuntu-22.04`** — which is how this repo empirically satisfies the brief's "develop in Ubuntu 22.04" requirement on every commit, with zero drift risk:
+`.github/workflows/ci.yaml` runs on every push and every PR, **pinned to `runs-on: ubuntu-22.04`** - which is how this repo empirically satisfies the brief's "develop in Ubuntu 22.04" requirement on every commit, with zero drift risk:
 
-- **`ruff check`** — lint (E/W/F/I/N/UP/B/SIM/C4/PT/RUF/PL/TCH/TID rule sets)
-- **`ruff format --check`** — formatter enforcement
-- **`mypy --strict`** on `src/` — type correctness
-- **`pytest --cov-fail-under=100`** — the 100% bar is **enforced**, any regression fails the PR
-- **`kubeconform`** on `k8s/api/`, `k8s/postgres/`, `k8s/storage/` — manifest schema validation
+- **`ruff check`** - lint (E/W/F/I/N/UP/B/SIM/C4/PT/RUF/PL/TCH/TID rule sets)
+- **`ruff format --check`** - formatter enforcement
+- **`mypy --strict`** on `src/` - type correctness
+- **`pytest --cov-fail-under=100`** - the 100% bar is **enforced**, any regression fails the PR
+- **`kubeconform`** on `k8s/api/`, `k8s/postgres/`, `k8s/storage/` - manifest schema validation
 - **`docker buildx build`** on both Dockerfiles with GHA-scoped BuildKit cache
 
 ### 3.4 What's NOT tested in CI (and why)
 
-- **A full KubeRay cluster bring-up.** Would require GitHub Actions to spin up kind + KubeRay + pull the Ray worker image (~2.5 GB), taking 10+ minutes per run. Instead, this is covered **manually** by the `make up && ./scripts/smoke-test.sh` path in `docs/SETUP.md`, and the result is captured in §3.5 below — a real end-to-end run that produced real Qwen2.5-0.5B inference from the exact exercise-PDF curl.
+- **A full KubeRay cluster bring-up.** Would require GitHub Actions to spin up kind + KubeRay + pull the Ray worker image (~2.5 GB), taking 10+ minutes per run. Instead, this is covered **manually** by the `make up && ./scripts/smoke-test.sh` path in `docs/SETUP.md`, and the result is captured in §3.5 below - a real end-to-end run that produced real Qwen2.5-0.5B inference from the exact exercise-PDF curl.
 - **Performance / load testing.** Out of scope for a take-home. In production this would be a k6 or locust load test parameterized over batch size, prompt length, and concurrency, with the KPIs from §5 as acceptance gates.
 
 ### 3.5 End-to-end runtime verification on kind + KubeRay
@@ -196,14 +196,14 @@ The full stack has been brought up on a real (local) KubeRay cluster and the exa
 "Hello world"   → "Hello! How can I help you today?"
 ```
 
-**Four first-contact issues caught and fixed during the bring-up** — exactly the kind of runtime reality the mocked test suite cannot surface by design. Each fix is a separate commit on `main`:
+**Four first-contact issues caught and fixed during the bring-up** - exactly the kind of runtime reality the mocked test suite cannot surface by design. Each fix is a separate commit on `main`:
 
-1. **`fix(scripts): use generic python3 packages for Ubuntu 24.04 compat`** — `scripts/setup.sh` originally pinned `python3.11`, which is only available in Ubuntu 22.04 repos. Dropped the `.11` suffix so the installer works on both 22.04 and 24.04. `pyproject.toml`'s `requires-python = ">=3.11"` still enforces the language baseline, and `uv venv --python 3.11` in CI downloads a specific interpreter via `python-build-standalone` if the host doesn't provide one.
-2. **`fix(k8s): relax RayCluster probe timeouts and drop deprecated Ray Client check`** — KubeRay's auto-injected worker probes default to `timeoutSeconds: 1` and fail under CPU contention during Ray boot. Head readiness was probing the `ray_client_server_handle` component, but Ray Client is **deprecated in Ray 2.54** in favor of the Jobs API (which `JobSubmissionClient` uses), so the component is never started. Fix: explicit worker probes with `timeoutSeconds: 15`, and `ray health-check` (no `--component` flag) on the head.
-3. **`fix(api): ray[client] → ray[default] for JobSubmissionClient dashboard extras`** — `JobSubmissionClient` needs the `ray[default]` package extras, not the deprecated `ray[client]` variant. The API pod crash-looped at startup with an `ImportError` that the mocked unit tests could not catch because they monkeypatch `ray.job_submission` via `set_client_factory` and never exercise the real import path. Updated both `api/pyproject.toml` and `api/Dockerfile`.
-4. **`fix(k8s): umask 0000 on batch-api so API and Ray workers share hostPath PVC`** — API pod runs as UID 10001 (baked into `api/Dockerfile`), Ray worker pods run as UID 1000 (the `ray` user in `rayproject/ray` base image). `hostPath` volumes ignore `fsGroup`, so batch subdirectories created by the API (default `0755`) were unreadable by Ray workers. Wrapping `uvicorn` with `umask 0000` makes new directories world-writable. Production fix is a real `ReadWriteMany` CSI driver (EFS / Azure Files / Filestore) where `fsGroup` works — documented in `docs/ARCHITECTURE.md §2.5`.
+1. **`fix(scripts): use generic python3 packages for Ubuntu 24.04 compat`** - `scripts/setup.sh` originally pinned `python3.11`, which is only available in Ubuntu 22.04 repos. Dropped the `.11` suffix so the installer works on both 22.04 and 24.04. `pyproject.toml`'s `requires-python = ">=3.11"` still enforces the language baseline, and `uv venv --python 3.11` in CI downloads a specific interpreter via `python-build-standalone` if the host doesn't provide one.
+2. **`fix(k8s): relax RayCluster probe timeouts and drop deprecated Ray Client check`** - KubeRay's auto-injected worker probes default to `timeoutSeconds: 1` and fail under CPU contention during Ray boot. Head readiness was probing the `ray_client_server_handle` component, but Ray Client is **deprecated in Ray 2.54** in favor of the Jobs API (which `JobSubmissionClient` uses), so the component is never started. Fix: explicit worker probes with `timeoutSeconds: 15`, and `ray health-check` (no `--component` flag) on the head.
+3. **`fix(api): ray[client] → ray[default] for JobSubmissionClient dashboard extras`** - `JobSubmissionClient` needs the `ray[default]` package extras, not the deprecated `ray[client]` variant. The API pod crash-looped at startup with an `ImportError` that the mocked unit tests could not catch because they monkeypatch `ray.job_submission` via `set_client_factory` and never exercise the real import path. Updated both `api/pyproject.toml` and `api/Dockerfile`.
+4. **`fix(k8s): umask 0000 on batch-api so API and Ray workers share hostPath PVC`** - API pod runs as UID 10001 (baked into `api/Dockerfile`), Ray worker pods run as UID 1000 (the `ray` user in `rayproject/ray` base image). `hostPath` volumes ignore `fsGroup`, so batch subdirectories created by the API (default `0755`) were unreadable by Ray workers. Wrapping `uvicorn` with `umask 0000` makes new directories world-writable. Production fix is a real `ReadWriteMany` CSI driver (EFS / Azure Files / Filestore) where `fsGroup` works - documented in `docs/ARCHITECTURE.md §2.5`.
 
-**Three additional cross-platform coverage gaps** were surfaced when the CI suite ran on `ubuntu-22.04` / python 3.11 for the first time after those runtime fixes landed — coverage.py traces a few sync-after-await patterns differently on Linux 3.11 vs Windows 3.12. One is a documented tracer blind spot (`# pragma: no cover` with a comment explaining the reason); the other two were closed by splitting a compound `if` condition into explicit early returns and adding a test that forces `CancelledError` to propagate from inside the poller's `try` block via a monkeypatched slow sweep. Full suite is 169 cases, 100% line and branch on both platforms.
+**Three additional cross-platform coverage gaps** were surfaced when the CI suite ran on `ubuntu-22.04` / python 3.11 for the first time after those runtime fixes landed - coverage.py traces a few sync-after-await patterns differently on Linux 3.11 vs Windows 3.12. One is a documented tracer blind spot (`# pragma: no cover` with a comment explaining the reason); the other two were closed by splitting a compound `if` condition into explicit early returns and adding a test that forces `CancelledError` to propagate from inside the poller's `try` block via a monkeypatched slow sweep. Full suite is 169 cases, 100% line and branch on both platforms.
 
 ---
 
@@ -240,11 +240,11 @@ Streaming is via FastAPI's `StreamingResponse` wrapping an `aiofiles`-backed asy
 | **Shared PVC JSONL**| multi-pod RWX; cheap streaming; matches OpenAI Batches API  | kind needs `hostPath` workaround because default StorageClass is RWO                             |
 | S3 / MinIO          | production-ready, presigned URLs, infinite scale            | extra infra component; overkill for a laptop demo                                                |
 
-### 4.2 Job Management — how do you check status and retrieve results?
+### 4.2 Job Management - how do you check status and retrieve results?
 
-**Status:** `GET /v1/batches/{batch_id}` — reads Postgres, returns the OpenAI-shaped `BatchObject` including `status`, `created_at`, `completed_at`, and `request_counts`.
+**Status:** `GET /v1/batches/{batch_id}` - reads Postgres, returns the OpenAI-shaped `BatchObject` including `status`, `created_at`, `completed_at`, and `request_counts`.
 
-**Results:** `GET /v1/batches/{batch_id}/results` — streams `results.jsonl` as NDJSON. Returns 409 if `status != completed`.
+**Results:** `GET /v1/batches/{batch_id}/results` - streams `results.jsonl` as NDJSON. Returns 409 if `status != completed`.
 
 **The lifecycle state machine:**
 
@@ -265,19 +265,19 @@ Streaming is via FastAPI's `StreamingResponse` wrapping an `aiofiles`-backed asy
 | in_progress → completed     | Background status poller, on Ray `SUCCEEDED`. Reads `_SUCCESS` marker for counts. |
 | in_progress → failed        | Background status poller, on Ray `FAILED`. Reads `_FAILED` marker for error. |
 | queued → failed             | `POST /v1/batches` handler, on Ray `submit_job` throwing (503 to client, row marked failed) |
-| * → cancelled               | Future `DELETE /v1/batches/{id}` — not in exercise scope |
+| * → cancelled               | Future `DELETE /v1/batches/{id}` - not in exercise scope |
 
-**The background poller is the key insight** — decoupling status updates from the hot path means the API stays fast and resilient even when Ray is down.
+**The background poller is the key insight** - decoupling status updates from the hot path means the API stays fast and resilient even when Ray is down.
 
-### 4.3 Load Balancing — how does Ray distribute work, and what issues do you see?
+### 4.3 Load Balancing - how does Ray distribute work, and what issues do you see?
 
 **How Ray Data distributes the work** (from `inference/jobs/batch_infer.py`):
 
 1. `ray.data.read_json(input.jsonl)` creates a Dataset partitioned into blocks (one per source file by default).
 2. `ds.repartition(max(2, total // 16 or 2))` gives us more blocks than actors so no worker sits idle at the tail of the job.
-3. `ds.map_batches(QwenPredictor, concurrency=2, batch_size=8)` spins up an actor pool with two long-lived actors — one per Ray worker pod. Each actor loads Qwen2.5-0.5B **once** in `__init__` and processes successive batches in `__call__`.
+3. `ds.map_batches(QwenPredictor, concurrency=2, batch_size=8)` spins up an actor pool with two long-lived actors - one per Ray worker pod. Each actor loads Qwen2.5-0.5B **once** in `__init__` and processes successive batches in `__call__`.
 4. Ray's scheduler places actors using the resource requests declared in the RayCluster `workerGroupSpecs` (CPU only in the demo, `num_gpus=1` in the production GPU upgrade path).
-5. Blocks stream through the pipeline with automatic backpressure — if actors are slow, upstream reads throttle.
+5. Blocks stream through the pipeline with automatic backpressure - if actors are slow, upstream reads throttle.
 6. Results are written block-by-block to the output Dataset and materialized as JSONL.
 
 **Issues I see** (discussed in detail in `docs/ARCHITECTURE.md §3.3`):
@@ -294,37 +294,37 @@ Streaming is via FastAPI's `StreamingResponse` wrapping an `aiofiles`-backed asy
 
 6. **Actor pool not aware of queue depth.** Ray Data doesn't know how many batches are queued across multiple simultaneous jobs. Under heavy parallel load the API could submit 10 batches, all landing on the same 2-actor pool, with the first one hogging everything. Production fix: sit Kueue in front of the cluster, or implement a per-tenant rate limiter at the API layer.
 
-### 4.4 KPIs — what metrics matter for production operations?
+### 4.4 KPIs - what metrics matter for production operations?
 
 A production deployment would track four families of metrics, each with alerts on the bold-italic items.
 
-**SLI / SLO layer — user-visible quality:**
-- ***Batch acceptance rate*** — % of `POST /v1/batches` returning 2xx (excluding 422 client errors). **SLO: ≥ 99.9%.** Alert on `< 99% over 5 min`.
-- **Time-to-queue (p50 / p95)** — wall time from HTTP request start to DB row with `status=queued`. **SLO: p95 < 300 ms.**
-- **Time-to-first-result per batch** — wall time from `submit_job` to the first row written to `results.jsonl`. SLO depends on warmup state of cluster.
-- **Time-to-complete per batch** (p50/p95/p99 per prompt-count bucket) — the core throughput SLI.
-- ***End-to-end batch success rate*** — % of submitted batches reaching `status=completed`. **SLO: ≥ 99%.** Alert immediately on any deviation.
+**SLI / SLO layer - user-visible quality:**
+- ***Batch acceptance rate*** - % of `POST /v1/batches` returning 2xx (excluding 422 client errors). **SLO: ≥ 99.9%.** Alert on `< 99% over 5 min`.
+- **Time-to-queue (p50 / p95)** - wall time from HTTP request start to DB row with `status=queued`. **SLO: p95 < 300 ms.**
+- **Time-to-first-result per batch** - wall time from `submit_job` to the first row written to `results.jsonl`. SLO depends on warmup state of cluster.
+- **Time-to-complete per batch** (p50/p95/p99 per prompt-count bucket) - the core throughput SLI.
+- ***End-to-end batch success rate*** - % of submitted batches reaching `status=completed`. **SLO: ≥ 99%.** Alert immediately on any deviation.
 
-**Throughput layer — capacity planning:**
-- Prompts per second (global) — aggregate pipeline throughput.
-- **Input + output tokens per second** — the real useful throughput, since prompt length varies.
-- Actor utilization (% of wall time actors spent in `__call__` vs idle) — tells you if you're underscheduled or scheduler-bound.
-- GPU utilization + GPU memory (when on GPU) — from `nvidia-dcgm-exporter`.
+**Throughput layer - capacity planning:**
+- Prompts per second (global) - aggregate pipeline throughput.
+- **Input + output tokens per second** - the real useful throughput, since prompt length varies.
+- Actor utilization (% of wall time actors spent in `__call__` vs idle) - tells you if you're underscheduled or scheduler-bound.
+- GPU utilization + GPU memory (when on GPU) - from `nvidia-dcgm-exporter`.
 
-**Reliability layer — platform health:**
-- ***Failed prompt rate per batch*** — row-level errors. Some are legitimate model failures (safe), others are infrastructure (alertable).
-- ***Ray worker pod restart count*** — OOMKills and crashes. Alert on any restart.
-- ***RayCluster `status.state != ready` duration*** — the platform-level availability SLI. Alert on `> 1 min`.
-- ***Postgres `up == 0`*** — database availability. Alert immediately.
-- ***Status poller sweep failure rate*** — if the poller can't talk to Ray, batches stall silently from the user's point of view. Alert on `> 10% failures over 1 min`.
+**Reliability layer - platform health:**
+- ***Failed prompt rate per batch*** - row-level errors. Some are legitimate model failures (safe), others are infrastructure (alertable).
+- ***Ray worker pod restart count*** - OOMKills and crashes. Alert on any restart.
+- ***RayCluster `status.state != ready` duration*** - the platform-level availability SLI. Alert on `> 1 min`.
+- ***Postgres `up == 0`*** - database availability. Alert immediately.
+- ***Status poller sweep failure rate*** - if the poller can't talk to Ray, batches stall silently from the user's point of view. Alert on `> 10% failures over 1 min`.
 
-**Cost layer — unit economics:**
-- **$ per 1M output tokens** — standard LLM unit cost. Compare against compute burn to catch overprovisioning.
-- Cluster idle time — ratio of wall time where actors serve no batches. Informs autoscaling.
+**Cost layer - unit economics:**
+- **$ per 1M output tokens** - standard LLM unit cost. Compare against compute burn to catch overprovisioning.
+- Cluster idle time - ratio of wall time where actors serve no batches. Informs autoscaling.
 
-**Privacy-preserving note** — if this service handles user data, every metric must be **cardinality-limited and content-free**: count of prompts, bytes of input, latency histograms, token totals. Never the actual prompts, never user identifiers. This is a hard constraint on the instrumentation plan — logging a full prompt in a span or a Prometheus label is a compliance incident.
+**Privacy-preserving note** - if this service handles user data, every metric must be **cardinality-limited and content-free**: count of prompts, bytes of input, latency histograms, token totals. Never the actual prompts, never user identifiers. This is a hard constraint on the instrumentation plan - logging a full prompt in a span or a Prometheus label is a compliance incident.
 
-### 4.5 Integration — how well does KubeRay integrate with Kubernetes? Strengths and limitations?
+### 4.5 Integration - how well does KubeRay integrate with Kubernetes? Strengths and limitations?
 
 **Strengths:**
 
@@ -332,7 +332,7 @@ A production deployment would track four families of metrics, each with alerts o
 
 2. **Service discovery via Kubernetes DNS.** The operator auto-creates `<cluster>-head-svc` when the RayCluster is created. No manual service definitions, no hard-coded IPs, no environment-specific URL templates.
 
-3. **RBAC integration.** RayCluster pods run under a ServiceAccount; the operator itself respects RBAC. In KubeRay v1.6 + Ray v2.55, Kubernetes RBAC identities can be mapped to Ray token auth — a real production security story.
+3. **RBAC integration.** RayCluster pods run under a ServiceAccount; the operator itself respects RBAC. In KubeRay v1.6 + Ray v2.55, Kubernetes RBAC identities can be mapped to Ray token auth - a real production security story.
 
 4. **Autoscaling via K8s primitives.** Setting `enableInTreeAutoscaling: true` with `minReplicas` / `maxReplicas` bounds on the worker group lets Ray scale out by adding worker pods, and cluster-autoscaler-aware node pools expand to absorb them. No custom control loops, no external scaler.
 
@@ -368,16 +368,16 @@ A production deployment would track four families of metrics, each with alerts o
 - **OpenTelemetry** tracing with spans for: HTTP request → DB query → Ray submit → status poll → result read. Spans exported to Tempo or Jaeger. **No prompt content in span attributes.**
 - **Loki** for log aggregation, with structured JSON logs from the FastAPI middleware and Ray workers
 
-**A reference implementation of the core two — Prometheus scraping Ray pods and Grafana auto-importing Ray's default dashboards — ships with this repo** as `k8s/monitoring/` + `scripts/install-monitoring.sh`, opt-in via `make monitoring-up`. The scrape config uses `kubernetes_sd_configs` pod discovery filtered by the `ray.io/cluster` label and rewrites `__address__` to the metrics port (`:8080`). Grafana's sidecar-based dashboard provisioner picks up a ConfigMap that `install-monitoring.sh` populates by extracting `/tmp/ray/session_latest/metrics/grafana/dashboards/` live from the running Ray head pod via `kubectl exec` — guaranteeing zero drift between the dashboard and the running Ray version. The Ray head container's `RAY_PROMETHEUS_HOST`, `RAY_GRAFANA_HOST`, and `RAY_GRAFANA_IFRAME_HOST` env vars are already declared in `k8s/raycluster/raycluster.yaml`, so once monitoring is installed a browser refresh of `http://localhost:8265/#/metrics` renders the time-series panels iframed from Grafana. The full Alertmanager / OpenTelemetry / Loki layers are deliberately left to production; see `docs/ARCHITECTURE.md §2.11` for the scope decision.
+**A reference implementation of the core two - Prometheus scraping Ray pods and Grafana auto-importing Ray's default dashboards - ships with this repo** as `k8s/monitoring/` + `scripts/install-monitoring.sh`, opt-in via `make monitoring-up`. The scrape config uses `kubernetes_sd_configs` pod discovery filtered by the `ray.io/cluster` label and rewrites `__address__` to the metrics port (`:8080`). Grafana's sidecar-based dashboard provisioner picks up a ConfigMap that `install-monitoring.sh` populates by extracting `/tmp/ray/session_latest/metrics/grafana/dashboards/` live from the running Ray head pod via `kubectl exec` - guaranteeing zero drift between the dashboard and the running Ray version. The Ray head container's `RAY_PROMETHEUS_HOST`, `RAY_GRAFANA_HOST`, and `RAY_GRAFANA_IFRAME_HOST` env vars are already declared in `k8s/raycluster/raycluster.yaml`, so once monitoring is installed a browser refresh of `http://localhost:8265/#/metrics` renders the time-series panels iframed from Grafana. The full Alertmanager / OpenTelemetry / Loki layers are deliberately left to production; see `docs/ARCHITECTURE.md §2.11` for the scope decision.
 
 ### 5.2 Dashboards
 
 Four dashboards, one per KPI family from §4.4:
 
-1. **Service Health** — acceptance rate, time-to-queue, time-to-complete histograms, end-to-end success rate, `/ready` probe status over time.
-2. **Throughput** — prompts/sec, tokens/sec (input + output), actor utilization, per-batch duration by prompt-count bucket.
-3. **Reliability** — failed prompt rate, Ray worker pod restarts, RayCluster state, Postgres up, poller sweep failures.
-4. **Cost** — $/1M output tokens (computed from GPU hours × $/GPU × tokens produced), cluster idle time, per-tenant attribution.
+1. **Service Health** - acceptance rate, time-to-queue, time-to-complete histograms, end-to-end success rate, `/ready` probe status over time.
+2. **Throughput** - prompts/sec, tokens/sec (input + output), actor utilization, per-batch duration by prompt-count bucket.
+3. **Reliability** - failed prompt rate, Ray worker pod restarts, RayCluster state, Postgres up, poller sweep failures.
+4. **Cost** - $/1M output tokens (computed from GPU hours × $/GPU × tokens produced), cluster idle time, per-tenant attribution.
 
 ### 5.3 Alert thresholds
 
@@ -388,8 +388,8 @@ Four dashboards, one per KPI family from §4.4:
 | Ray dashboard unreachable                     | page      | `/ready` returning 503 for 5 min                         |
 | OOMKilled pod                                 | page      | `kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} > 0` |
 | Batch failure rate                            | warn      | `batch_failed_total / batch_submitted_total > 0.05` for 10 min |
-| Actor utilization > 95%                       | warn      | Capacity pressure — scale the worker group               |
-| Actor utilization < 20%                       | info      | Overprovisioned — consider shrinking                     |
+| Actor utilization > 95%                       | warn      | Capacity pressure - scale the worker group               |
+| Actor utilization < 20%                       | info      | Overprovisioned - consider shrinking                     |
 | Status poller sweep failure                   | warn      | `ray_poller_sweep_failed_total` incrementing             |
 | Disk usage on shared PVC > 80%                | warn      | `kubelet_volume_stats_used_bytes / capacity > 0.8`       |
 | Certificate expiry (if TLS enabled in prod)   | warn      | < 30 days                                                |
@@ -440,7 +440,7 @@ Items that are intentionally out of scope for the take-home but required for a p
 - [ ] `replicas: 2` + leader election on the KubeRay operator
 - [ ] Kueue in front of the cluster for multi-tenant batch queueing
 - [ ] OpenTelemetry distributed tracing end-to-end
-- [ ] Privacy-preserving metrics (cardinality-limited, content-free) — see §4.4
+- [ ] Privacy-preserving metrics (cardinality-limited, content-free) - see §4.4
 - [ ] Full Grafana dashboard JSON committed to the repo
 - [ ] k6 / locust load tests parameterized over batch size + concurrency
 - [ ] Chaos tests: kill a Ray worker mid-batch, poison a prompt, disconnect Postgres, drop the PVC
@@ -453,4 +453,4 @@ Items that are intentionally out of scope for the take-home but required for a p
 
 - **vLLM CPU wheel version compatibility with Ray 2.54.1** was not verified in this build (we don't use it on CPU). Before switching to `ray.data.llm` for production, re-test with the exact versions.
 - **Qwen2.5-0.5B CPU tokens/sec on a modern laptop** is unbenchmarked for this exact stack. The ~20-60 output tok/s figure in §4.3 is an extrapolation from similar-sized models, not a measurement. The live end-to-end run in §3.5 produced correct inference output but did not measure throughput.
-- **`# pragma: no cover` on `src/main.py:59`** (`ray_client.reset()` between two `await` calls in the lifespan shutdown helper) is a coverage.py tracing blind spot that only appears on one platform + Python-version combination at a time — observed on Linux / Python 3.11, not on Windows / Python 3.12. The line IS exercised by `test_lifespan_shutdown_helper_runs_every_step`, which asserts `ray_client.ping()` raises `RuntimeError` after the helper runs (impossible unless `reset()` actually executed). The pragma is documentation of a third-party tracer quirk, not a missing test.
+- **`# pragma: no cover` on `src/main.py:59`** (`ray_client.reset()` between two `await` calls in the lifespan shutdown helper) is a coverage.py tracing blind spot that only appears on one platform + Python-version combination at a time - observed on Linux / Python 3.11, not on Windows / Python 3.12. The line IS exercised by `test_lifespan_shutdown_helper_runs_every_step`, which asserts `ray_client.ping()` raises `RuntimeError` after the helper runs (impossible unless `reset()` actually executed). The pragma is documentation of a third-party tracer quirk, not a missing test.

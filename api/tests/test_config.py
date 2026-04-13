@@ -62,7 +62,7 @@ def test_ray_address_defaults_to_localhost(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_ray_address_rejects_non_http_scheme(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A ray:// or tcp:// address should be rejected — we speak the Jobs HTTP API."""
+    """A ray:// or tcp:// address should be rejected - we speak the Jobs HTTP API."""
     monkeypatch.setenv("API_KEY", "k")
     monkeypatch.setenv("RAY_ADDRESS", "ray://localhost:10001")
 
@@ -85,7 +85,7 @@ def test_ray_address_strips_trailing_slash(monkeypatch: pytest.MonkeyPatch) -> N
 
 # ─── POSTGRES_URL validator ─────────────────────────────────────────
 def test_postgres_url_must_use_async_driver(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A sync psycopg URL must be rejected — we only use asyncpg or aiosqlite."""
+    """A sync psycopg URL must be rejected - we only use asyncpg or aiosqlite."""
     monkeypatch.setenv("API_KEY", "k")
     monkeypatch.setenv("POSTGRES_URL", "postgresql://user:pass@host/db")
 
@@ -151,7 +151,7 @@ def test_max_batch_size_has_sensible_default(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_max_batch_size_rejects_zero(monkeypatch: pytest.MonkeyPatch) -> None:
-    """0 prompts per batch makes no sense — reject at config load."""
+    """0 prompts per batch makes no sense - reject at config load."""
     monkeypatch.setenv("API_KEY", "k")
     monkeypatch.setenv("MAX_BATCH_SIZE", "0")
 

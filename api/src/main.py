@@ -55,7 +55,7 @@ async def _lifespan_shutdown(poller_task: Any) -> None:
     well-known blind spot for sync statements interleaved between
     ``await`` calls on some platform + Python-version combinations
     (observed: Linux / Python 3.11). The pragma below documents that
-    the line IS exercised — coverage just fails to record it.
+    the line IS exercised - coverage just fails to record it.
     """
     log.info("lifespan: shutdown begin")
     await stop_status_poller(poller_task)

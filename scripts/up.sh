@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # -------------------------------------------------------------------------
-# up.sh — Bring up the entire stack in the correct order.
+# up.sh - Bring up the entire stack in the correct order.
 #
 # This wraps `make up` with pre-flight checks and ensures the host data
 # directory exists before kind creates the cluster (otherwise kind creates
@@ -21,7 +21,7 @@ cd "$REPO_ROOT"
 
 # 2. Pre-flight tool check
 for t in docker kind kubectl helm make; do
-  command -v "$t" >/dev/null 2>&1 || die "$t not found — run scripts/setup.sh"
+  command -v "$t" >/dev/null 2>&1 || die "$t not found - run scripts/setup.sh"
 done
 
 # 3. Pre-create the host data directory so kind doesn't create it as root
@@ -36,7 +36,7 @@ if [[ ! -f .env ]]; then
   cp .env.example .env
 fi
 
-# 5. Delegate the actual lifecycle to the Makefile — `make up` is the
+# 5. Delegate the actual lifecycle to the Makefile - `make up` is the
 #    single source of truth for the happy path
 log "Handing off to 'make up'..."
 make up

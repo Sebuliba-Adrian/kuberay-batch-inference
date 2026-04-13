@@ -111,7 +111,7 @@ spec:
             - name: tmp
               mountPath: /tmp
 
-          # Liveness — cheap, process alive + HTTP serving
+          # Liveness - cheap, process alive + HTTP serving
           livenessProbe:
             httpGet:
               path: /health
@@ -121,7 +121,7 @@ spec:
             failureThreshold: 3
             timeoutSeconds: 3
 
-          # Readiness — deeper dependency check against Postgres + Ray
+          # Readiness - deeper dependency check against Postgres + Ray
           readinessProbe:
             httpGet:
               path: /ready

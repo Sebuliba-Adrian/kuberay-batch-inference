@@ -1,4 +1,4 @@
-# Setup Guide — Fresh Ubuntu 22.04 → Working Curl
+# Setup Guide - Fresh Ubuntu 22.04 → Working Curl
 
 End-to-end bring-up of the KubeRay Batch Inference service on a fresh Ubuntu 22.04 machine. Every command here is copy-pasteable.
 
@@ -29,7 +29,7 @@ cd kuberay-batch-inference
 ./scripts/setup.sh
 ```
 
-This script is idempotent — re-running it is safe. It installs:
+This script is idempotent - re-running it is safe. It installs:
 
 | Tool    | Purpose                                      | Version pin |
 |---------|----------------------------------------------|-------------|
@@ -52,22 +52,22 @@ make up
 
 This runs the entire happy path:
 
-1. **`make cluster-up`** — creates the kind cluster `kuberay-dev` with `extraPortMappings` (host `:8000` → NodePort `30800`, host `:8265` → NodePort `30826`) and a hostPath mount at `/tmp/kuberay-batch-inference/data` for the shared PVC.
-2. **`make kuberay-install`** — `helm install kuberay-operator` pinned to chart `1.6.0` in the `kuberay-system` namespace.
-3. **`make build-images`** — builds two Docker images:
+1. **`make cluster-up`** - creates the kind cluster `kuberay-dev` with `extraPortMappings` (host `:8000` → NodePort `30800`, host `:8265` → NodePort `30826`) and a hostPath mount at `/tmp/kuberay-batch-inference/data` for the shared PVC.
+2. **`make kuberay-install`** - `helm install kuberay-operator` pinned to chart `1.6.0` in the `kuberay-system` namespace.
+3. **`make build-images`** - builds two Docker images:
    - `local/batch-api:dev` (the FastAPI proxy, multi-stage build, ~180 MB)
    - `local/ray-worker:2.54.1-cpu` (Ray + Transformers + Qwen2.5-0.5B pre-downloaded, ~2.5 GB)
-4. **`make load-images`** — `kind load docker-image` pushes both images into the cluster's containerd so pods don't try to pull from a registry.
-5. **`make namespace`** — creates the `ray` namespace.
-6. **`make storage`** — applies the shared PVC backed by the kind hostPath mount.
-7. **`make postgres`** — deploys Postgres 16 with schema init from `k8s/postgres/init-configmap.yaml`.
-8. **`make raycluster`** — applies the RayCluster CRD (1 head + 2 CPU workers) and waits for `status.state=ready`.
-9. **`make api`** — deploys the FastAPI proxy Deployment and Service.
-10. **`make port-forward`** — starts `kubectl port-forward svc/batch-api 8000:8000` in the foreground.
+4. **`make load-images`** - `kind load docker-image` pushes both images into the cluster's containerd so pods don't try to pull from a registry.
+5. **`make namespace`** - creates the `ray` namespace.
+6. **`make storage`** - applies the shared PVC backed by the kind hostPath mount.
+7. **`make postgres`** - deploys Postgres 16 with schema init from `k8s/postgres/init-configmap.yaml`.
+8. **`make raycluster`** - applies the RayCluster CRD (1 head + 2 CPU workers) and waits for `status.state=ready`.
+9. **`make api`** - deploys the FastAPI proxy Deployment and Service.
+10. **`make port-forward`** - starts `kubectl port-forward svc/batch-api 8000:8000` in the foreground.
 
 **This takes ~5-10 minutes the first time** because of the Ray worker image build (torch CPU wheels + Qwen weights). Subsequent `make up` runs are fast.
 
-> **Troubleshooting:** if `make raycluster` times out waiting for `status.state=ready`, check pod events with `kubectl -n ray get events --sort-by=.lastTimestamp`. The most common cause is insufficient CPU/memory on the kind node — raise Docker Desktop's resource limits or tune the `resources.requests` in `k8s/raycluster/raycluster.yaml`.
+> **Troubleshooting:** if `make raycluster` times out waiting for `status.state=ready`, check pod events with `kubectl -n ray get events --sort-by=.lastTimestamp`. The most common cause is insufficient CPU/memory on the kind node - raise Docker Desktop's resource limits or tune the `resources.requests` in `k8s/raycluster/raycluster.yaml`.
 
 ---
 
@@ -169,7 +169,7 @@ make down              # removes everything except the kind cluster
 make cluster-down      # nukes the kind cluster too
 ```
 
-The shared PVC host directory (`/tmp/kuberay-batch-inference/data`) is **not** deleted by either command — remove it manually with `rm -rf /tmp/kuberay-batch-inference` if you want a totally clean slate.
+The shared PVC host directory (`/tmp/kuberay-batch-inference/data`) is **not** deleted by either command - remove it manually with `rm -rf /tmp/kuberay-batch-inference` if you want a totally clean slate.
 
 ---
 
@@ -221,7 +221,7 @@ kubectl -n ray get endpoints qwen-raycluster-head-svc
 kubectl -n ray describe raycluster qwen-raycluster
 ```
 
-If the head pod is `Ready` but the workers are `Pending`, you're out of node resources. If the head pod is `Running` but not `Ready`, the Ray dashboard isn't answering yet — wait 30 more seconds.
+If the head pod is `Ready` but the workers are `Pending`, you're out of node resources. If the head pod is `Running` but not `Ready`, the Ray dashboard isn't answering yet - wait 30 more seconds.
 
 ### `/ready` returns 503 forever
 
@@ -233,4 +233,4 @@ Look at `checks.postgres` and `checks.ray`. The failing one tells you which depe
 
 ### Tests hang on Windows
 
-Python 3.12 + pytest-asyncio works cleanly on Windows. If you see hangs, you're almost certainly running against Python 3.11 via an old venv — recreate with `uv venv --python 3.11 --clear`.
+Python 3.12 + pytest-asyncio works cleanly on Windows. If you see hangs, you're almost certainly running against Python 3.11 via an old venv - recreate with `uv venv --python 3.11 --clear`.

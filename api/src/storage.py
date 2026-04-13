@@ -4,15 +4,15 @@ Shared-PVC filesystem helpers.
 Every filesystem interaction the API layer performs against the
 `/data/batches/<id>/...` tree lives here so routes stay free of
 pathlib details. The same tree is also written to by the Ray workers
-inside the cluster — ordering contracts are documented in
+inside the cluster - ordering contracts are documented in
 docs/ARCHITECTURE.md.
 
 Layout per batch:
     <root>/<batch_id>/
-        input.jsonl     — written by the API before submitting the job
-        results.jsonl   — written by the Ray worker when generation ends
-        _SUCCESS        — marker JSON written last on clean completion
-        _FAILED         — marker JSON written on top-level crash
+        input.jsonl     - written by the API before submitting the job
+        results.jsonl   - written by the Ray worker when generation ends
+        _SUCCESS        - marker JSON written last on clean completion
+        _FAILED         - marker JSON written on top-level crash
 
 Functions are written async where they do actual I/O (write_inputs,
 iter_results) and sync where they're cheap path ops (is_success,
@@ -57,7 +57,7 @@ async def write_inputs_jsonl(
 
     Returns the absolute path to the written file.
     """
-    items = list(items)  # materialize — we need a length check
+    items = list(items)  # materialize - we need a length check
     if not items:
         raise ValueError("write_inputs_jsonl requires at least one item")
 

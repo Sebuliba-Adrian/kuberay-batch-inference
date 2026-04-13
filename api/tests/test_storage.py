@@ -1,5 +1,5 @@
 """
-Red tests for src.storage — shared PVC JSONL helpers.
+Red tests for src.storage - shared PVC JSONL helpers.
 
 The storage module owns every filesystem interaction the API layer
 performs against the shared /data/batches tree. Tests use tmp_path
@@ -24,7 +24,7 @@ def test_batch_dir_returns_subpath(tmp_path: Path) -> None:
 
 
 def test_batch_dir_does_not_create_directory(tmp_path: Path) -> None:
-    """batch_dir() is pure — it never touches the filesystem."""
+    """batch_dir() is pure - it never touches the filesystem."""
     from src.storage import batch_dir
 
     d = batch_dir(tmp_path, "batch_01ABC")
@@ -88,7 +88,7 @@ async def test_write_inputs_jsonl_creates_parent_directory(tmp_path: Path) -> No
 
 
 async def test_write_inputs_jsonl_rejects_empty_list(tmp_path: Path) -> None:
-    """Empty input is a programmer bug — the API should have caught it."""
+    """Empty input is a programmer bug - the API should have caught it."""
     from src.storage import write_inputs_jsonl
 
     with pytest.raises(ValueError, match="at least one"):
