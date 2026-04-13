@@ -236,6 +236,21 @@ http_requests_total{method="GET",path="/v1/batches/{batch_id}",status="200"} ...
 ```
 `X-Request-ID: test-trace-123` echoed correctly by `/health`.
 
+**Post-fix `/metrics` snapshot** (captured after the path-template fix shipped, 28 requests across a fresh batch lifecycle):
+
+```
+http_requests_total{method="POST",path="/v1/batches",status="200"}             1.0
+http_requests_total{method="GET", path="/v1/batches/{batch_id}",status="200"} 27.0
+http_requests_total{method="GET", path="/health",status="200"}                12.0
+http_requests_total{method="GET", path="/ready",status="200"}                 31.0
+http_requests_total{method="GET", path="/metrics",status="200"}                1.0
+
+batch_submitted_total{model="Qwen/Qwen2.5-0.5B-Instruct"}                     1.0
+batch_terminal_total{model="Qwen/Qwen2.5-0.5B-Instruct",status="completed"}   1.0
+```
+
+The 27 poll requests land on a single `{batch_id}` series instead of fanning out to 27 literal-ULID series. Distinct `path` labels across the whole exposition are bounded to five (`/health`, `/ready`, `/metrics`, `/v1/batches`, `/v1/batches/{batch_id}`), which is what a Prometheus counter expects.
+
 ---
 
 ## 4. Answers to the Five Key Exercise Questions
