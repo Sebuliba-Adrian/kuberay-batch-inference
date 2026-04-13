@@ -36,15 +36,15 @@ async def require_api_key(
     provided: Annotated[str | None, Depends(_header_scheme)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> None:
-    """FastAPI dependency — raises 401 on missing or invalid key."""
+    """FastAPI dependency - raises 401 on missing or invalid key."""
     # Missing or explicitly empty header
     if not provided:
-        log.info("auth: request rejected — missing %s header", API_KEY_HEADER_NAME)
+        log.info("auth: request rejected - missing %s header", API_KEY_HEADER_NAME)
         raise _unauthorized("Missing API key")
 
     # Constant-time compare against the configured secret
     expected = settings.API_KEY.get_secret_value().encode()
     actual = provided.encode()
     if not hmac.compare_digest(actual, expected):
-        log.info("auth: request rejected — invalid %s", API_KEY_HEADER_NAME)
+        log.info("auth: request rejected - invalid %s", API_KEY_HEADER_NAME)
         raise _unauthorized("Invalid API key")

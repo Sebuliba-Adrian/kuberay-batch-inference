@@ -51,7 +51,7 @@ async def _db_only(
     monkeypatch: pytest.MonkeyPatch, api_key: str, tmp_path: Path
 ) -> AsyncIterator[None]:
     """
-    Init just the DB and settings — no Ray, no app build. Enough to
+    Init just the DB and settings - no Ray, no app build. Enough to
     call the module helpers directly without going through HTTP.
     """
     monkeypatch.setenv("API_KEY", api_key)

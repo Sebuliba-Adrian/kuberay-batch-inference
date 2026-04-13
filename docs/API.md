@@ -91,7 +91,7 @@ X-API-Key: <your-api-key>
 
 Unknown top-level fields or unknown fields inside `input[]` are **rejected** (`extra="forbid"`).
 
-### Response — 200 OK
+### Response - 200 OK
 
 ```json
 {
@@ -122,7 +122,7 @@ Unknown top-level fields or unknown fields inside `input[]` are **rejected** (`e
 | `status`          | enum          | `queued` \| `in_progress` \| `completed` \| `failed` \| `cancelled` |
 | `created_at`      | int           | Unix timestamp in **seconds** (mirrors OpenAI) |
 | `completed_at`    | int \| null   | Unix timestamp when the batch reached a terminal state; null while in progress |
-| `request_counts`  | object        | `{total, completed, failed}` — progress counters |
+| `request_counts`  | object        | `{total, completed, failed}` - progress counters |
 | `error`           | string \| null | Human-readable error string if `status=failed`, else null |
 
 ### Error responses
@@ -138,14 +138,14 @@ Unknown top-level fields or unknown fields inside `input[]` are **rejected** (`e
 
 ## `GET /v1/batches/{batch_id}`
 
-Fetch the current state of a batch. Reads from Postgres — does **not** query Ray on the hot path, so this endpoint stays fast and works even when Ray is down.
+Fetch the current state of a batch. Reads from Postgres - does **not** query Ray on the hot path, so this endpoint stays fast and works even when Ray is down.
 
 ```bash
 curl -H "X-API-Key: $API_KEY" \
   http://localhost:8000/v1/batches/batch_01JABC...
 ```
 
-### Response — 200 OK
+### Response - 200 OK
 
 Same shape as `POST /v1/batches` response. `status` reflects the latest state as seen by the background status poller (5 s polling interval by default).
 
@@ -170,7 +170,7 @@ curl -H "X-API-Key: $API_KEY" \
   http://localhost:8000/v1/batches/batch_01JABC.../results
 ```
 
-### Response — 200 OK
+### Response - 200 OK
 
 `Content-Type: application/x-ndjson`
 
@@ -199,7 +199,7 @@ curl -H "X-API-Key: $API_KEY" \
 | 401    | `{"detail": "Invalid API key"}`                             | Wrong key. |
 | 404    | `{"detail": "Batch not found: batch_..."}`                  | Unknown id. |
 | 409    | `{"detail": "Batch not complete (status=in_progress)"}`    | Batch hasn't reached `completed` yet. Also returned for `failed` and `cancelled`. |
-| 500    | `{"detail": "Results file missing"}`                        | The DB says completed but the file isn't on the shared PVC — data-plane corruption. |
+| 500    | `{"detail": "Results file missing"}`                        | The DB says completed but the file isn't on the shared PVC - data-plane corruption. |
 
 ---
 

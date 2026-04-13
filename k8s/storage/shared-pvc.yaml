@@ -9,7 +9,7 @@
 # Workaround: we define an explicit PersistentVolume backed by a hostPath
 # that is mounted into the kind node via `extraMounts` in kind-config.yaml.
 # hostPath PVs support RWX because the "storage" is simply a directory on
-# the node — multiple pods on the same node can mount it simultaneously.
+# the node - multiple pods on the same node can mount it simultaneously.
 #
 # Since the kind cluster has only one node, all pods land there, so
 # multi-pod access works cleanly.

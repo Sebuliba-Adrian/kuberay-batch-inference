@@ -3,7 +3,7 @@
 
 This module owns the cross-cutting dance between auth, input
 validation, database persistence, shared-PVC writes, and Ray job
-submission. Each handler is intentionally thin — every piece of
+submission. Each handler is intentionally thin - every piece of
 business logic it calls lives in its own well-tested module.
 
 Error translation policy:
@@ -56,7 +56,7 @@ router = APIRouter(
 def _new_batch_id() -> str:
     """Generate a new `batch_<ulid>` identifier."""
     # ULID is 26 chars, lexicographically sortable by creation time,
-    # and url-safe — no hyphens to escape, no collision risk.
+    # and url-safe - no hyphens to escape, no collision risk.
     return f"batch_{ULID()!s}"
 
 
@@ -65,7 +65,7 @@ def _to_unix(dt: _dt.datetime) -> int:
     Convert a SQLAlchemy datetime column to Unix seconds.
 
     SQLite's aiosqlite driver returns DateTime(timezone=True) values
-    as NAIVE datetimes — it drops the tzinfo on the way back even
+    as NAIVE datetimes - it drops the tzinfo on the way back even
     though we inserted a tz-aware value. Python's default
     ``datetime.timestamp()`` treats a naive datetime as local time,
     which produces a wrong Unix value on any non-UTC host.
@@ -127,12 +127,12 @@ async def create_batch(
 
     # 1. Write inputs to the shared PVC so Ray workers can read them.
     #    Done before the DB insert so if this fails the row is never
-    #    created — nothing to clean up.
+    #    created - nothing to clean up.
     input_items = [item.model_dump() for item in request.input]
     input_path = await storage.write_inputs_jsonl(Path(settings.RESULTS_DIR), batch_id, input_items)
 
     # 2. Persist the row in queued state. If the DB insert fails the
-    #    storage file is orphaned on disk but that's just disk — the
+    #    storage file is orphaned on disk but that's just disk - the
     #    periodic cleanup job (out of scope) handles stragglers.
     async with db.session_scope() as session:
         row = Batch(
@@ -199,7 +199,7 @@ async def get_batch_status(batch_id: str) -> BatchObject:
     """
     Return the current state of a batch.
 
-    Reads directly from Postgres — does NOT query Ray. The background
+    Reads directly from Postgres - does NOT query Ray. The background
     status poller (separate TDD cycle) is responsible for keeping the
     row up to date. This makes the hot-path GET fast and resilient
     even when the Ray cluster is temporarily unreachable.
@@ -245,7 +245,7 @@ async def get_batch_results(
         409 if the batch exists but status != "completed".
         500 if the status says completed but the file is missing.
     """
-    # 1. Look up the batch row first — if it doesn't exist we owe the
+    # 1. Look up the batch row first - if it doesn't exist we owe the
     # caller a 404 before ever touching the filesystem.
     async with db.session_scope() as session:
         row = await db.get_batch(session, batch_id)
@@ -331,7 +331,7 @@ async def poll_active_batches() -> None:
     the _SUCCESS / _FAILED marker files from the shared PVC so the
     `request_counts` in the DB match what the worker actually wrote.
 
-    Individual Ray errors are caught and logged — a transient dashboard
+    Individual Ray errors are caught and logged - a transient dashboard
     hiccup should not stall every in-flight batch in the sweep.
     """
     settings = get_settings()
@@ -347,7 +347,7 @@ async def poll_active_batches() -> None:
     for row in active:
         if row.ray_job_id is None:
             # Row was created but Ray submission has not yet attached
-            # a submission id. Skip this pass — we'll catch it on the
+            # a submission id. Skip this pass - we'll catch it on the
             # next one.
             continue
         try:
@@ -374,7 +374,7 @@ async def _poll_one(batch_id: str, ray_job_id: str, input_count: int, results_ro
         if marker is not None:
             await _apply_success(batch_id, marker, now_utc)
         else:
-            # Worker finished but didn't write a marker — trust
+            # Worker finished but didn't write a marker - trust
             # input_count as the completed count.
             await _apply_success(
                 batch_id,
