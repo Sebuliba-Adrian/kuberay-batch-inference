@@ -90,6 +90,13 @@ namespace: ## Create the ray namespace
 .PHONY: storage
 storage: namespace ## Apply shared PVC for batch inputs and outputs
 	kubectl apply -n $(NAMESPACE) -f k8s/storage/shared-pvc.yaml
+	@# Ensure the hostPath inside the kind node is world-writable. Kind creates
+	@# extraMount targets with 0755 root:root by default, which causes the API
+	@# pod's first POST /v1/batches to fail with Errno 13 on mkdir(/data/batches/...).
+	@# Chmod-ing here (instead of relying on up.sh to chmod the host side) makes
+	@# the fix independent of how make up was invoked and survives host/kind-node
+	@# permission-bit drift.
+	docker exec $(CLUSTER_NAME)-control-plane chmod -R 0777 /mnt/data
 
 .PHONY: postgres
 postgres: namespace ## Deploy Postgres for job metadata

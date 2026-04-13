@@ -58,6 +58,15 @@ def _get(path: str) -> dict:
     return json.loads(urllib.request.urlopen(req).read())
 
 
+def _get_results(path: str) -> list[dict]:
+    # /v1/batches/{id}/results is JSONL (one record per line), not a single
+    # JSON document, matching OpenAI's Batches API. json.loads on the whole
+    # body raises "Extra data" on the second line.
+    req = urllib.request.Request(f"{HOST}{path}", headers={"X-API-Key": API_KEY})
+    body = urllib.request.urlopen(req).read().decode()
+    return [json.loads(line) for line in body.splitlines() if line.strip()]
+
+
 def main() -> None:
     body = json.dumps(
         {
@@ -91,12 +100,7 @@ def main() -> None:
     finished_at = status.get("completed_at")
     inference_s = finished_at - started_at if (started_at and finished_at) else None
 
-    result = _get(f"/v1/batches/{batch_id}/results")
-    if isinstance(result, dict):
-        output = result.get("output", [])
-    else:
-        # NDJSON stream path: not used by main repo, but keep tolerant
-        output = []
+    output = _get_results(f"/v1/batches/{batch_id}/results")
 
     ok = sum(1 for r in output if not r.get("error") and r.get("response"))
     words = [len((r.get("response") or "").split()) for r in output if r.get("response")]
