@@ -2,6 +2,8 @@
 
 This document explains **what** this system does, **how** it's structured, and **why** each component was chosen. It also directly answers the five key questions from the exercise brief.
 
+> **Scope note.** I came into this exercise without prior Ray or KubeRay experience and worked through it over five days. The decisions below are grounded in the Ray/KubeRay docs, a handful of reference repos, and the bugs the actual bring-up surfaced (see the Technical Report §3.5 for those). Some decisions that read as confident here are better described as "this was the option the docs pointed me at, it worked, and I understand enough of the trade-off to defend it" - not "I've run this in production for two years". Open questions I'm still chewing on live in `TECHNICAL_REPORT.md §7`.
+
 ---
 
 ## 1. System overview
@@ -51,20 +53,20 @@ unchanged.
 
 **Decision:** Use Ray Data's `map_batches` for the inference pipeline.
 
-**Why:** Ray Data is the canonical 2025-2026 choice for **offline** LLM batch inference. Ray Serve targets online request/response, Ray Core is too low-level, and Ray Data gives streaming execution, row-level fault tolerance, backpressure, autoscaling actor pools, and (since Ray 2.44) a first-class `ray.data.llm` module that wraps vLLM natively.
+**Why:** Reading the current Ray docs and the 2025 "batch inference with Ray" guides, Ray Data is the path they consistently point at for **offline** LLM batch inference. Ray Serve is the online-request/response side, Ray Core felt too low-level to reinvent batching on, and Ray Data gives me streaming execution, row-level fault tolerance, backpressure, and autoscaling actor pools without having to hand-roll them. Since Ray 2.44 there's also a `ray.data.llm` module that wraps vLLM natively, which is the upgrade target I'd reach for next.
 
-**Trade-off accepted:** `ray.data.llm.vLLMEngineProcessorConfig` is ~2× faster than hand-rolled `map_batches` + vLLM at production scale, but it pulls the full `ray[llm]` + `vllm` dependency chain and the vLLM CPU backend is fragile. For a take-home that must **actually run on a laptop without a GPU**, we use the simpler **`map_batches` + HuggingFace Transformers** pattern. The vLLM / `ray.data.llm` path is documented in commented code and the Technical Report as the production upgrade path.
+**Trade-off accepted:** `ray.data.llm.vLLMEngineProcessorConfig` is reported to be roughly 2× faster than hand-rolled `map_batches` + vLLM at production scale, but it pulls the full `ray[llm]` + `vllm` dependency chain and the vLLM CPU backend was flaky enough on my attempts that I didn't want to debug it inside a 5-day window. For a take-home that must actually run on a laptop without a GPU, I stuck with the simpler `map_batches` + HuggingFace Transformers pattern. The vLLM / `ray.data.llm` path is documented in commented code and in the Technical Report as the next thing I'd try.
 
 ### 2.2 HuggingFace Transformers over vLLM (for this CPU-only local build)
 
 **Decision:** The worker image uses `transformers` + `torch` (CPU wheels) to run Qwen2.5-0.5B. vLLM is **not** installed in the default image.
 
 **Why:**
-- Qwen2.5-0.5B is 0.5 B parameters - ~1 GB in BF16. A laptop CPU can handle it without paged-attention wizardry.
-- vLLM's CPU backend (`vllm-cpu`) requires a separate wheel, has known issues with `VLLM_CPU_KVCACHE_SPACE` defaults, and ships behind the GPU version in feature parity. For a first-run demo on a cold laptop, that's a recipe for "doesn't work on grader's machine".
-- Transformers + `AutoModelForCausalLM.generate()` is universally supported and debuggable with one import.
+- Qwen2.5-0.5B is 0.5 B parameters - roughly 1 GB in BF16. A laptop CPU can run it without paged-attention techniques I haven't learned yet.
+- vLLM's CPU backend (`vllm-cpu`) needs a separate wheel and, from what I read in its issue tracker, trails the GPU build in feature parity. Picking that up inside a 5-day window felt too risky for a demo that has to run on someone else's machine.
+- Transformers + `AutoModelForCausalLM.generate()` is what the HuggingFace tutorials use, which means I can actually debug it when it breaks.
 
-**Trade-off accepted:** Lower tokens/sec than vLLM (~20-60 tok/s vs ~200+), no continuous batching, no prefix caching. For a distributed demo with 2 workers and a few hundred prompts per batch, throughput is adequate and not the point of the exercise - the point is *distribution across Ray workers with clean job lifecycle*.
+**Trade-off accepted:** Lower tokens/sec than vLLM (roughly 20-60 tok/s vs 200+ in reported benchmarks), no continuous batching, no prefix caching. For a distributed demo with 2 workers and a few hundred prompts per batch, that's acceptable - and the exercise is really about *distribution across Ray workers with a clean job lifecycle*, not peak throughput.
 
 **Upgrade path:** Swap the UDF class to `vLLMEngineProcessorConfig` + `build_llm_processor`, add `device="cuda"` workers, and it's a drop-in. Documented in `inference/jobs/batch_infer.py` and `TECHNICAL_REPORT.md`.
 
@@ -78,7 +80,7 @@ unchanged.
 | `RayJob` CRD (cluster-per-job) | 60-120s on kind + image pull | ❌ unusable as a demo |
 | Long-running `RayCluster` + `JobSubmissionClient` | Sub-second dispatch | ✓ |
 
-A fresh RayCluster per API request would cost ~1-2 minutes of dead time on a laptop kind cluster - the grader would POST the curl and stare at a blank terminal. The long-running cluster pattern is also what production inference platforms do (Anyscale, OpenAI Batches, AWS Bedrock Batch).
+A fresh RayCluster per API request cost roughly 1-2 minutes of dead time on my kind cluster in an early experiment - the grader would POST the curl and stare at a blank terminal. From skimming how OpenAI Batches, Anyscale, and AWS Bedrock Batch describe their architectures, a warm long-running pool seems to be how they handle this too, so the pattern felt defensible to borrow.
 
 **Trade-off accepted:** The RayCluster is always consuming resources even when idle. On kind that's ~6 CPU / 12 Gi RAM reserved. Mitigated by setting `minReplicas=maxReplicas=2` (no autoscaling thrash) and documenting `make down` to stop when not in use.
 
@@ -113,15 +115,15 @@ A fresh RayCluster per API request would cost ~1-2 minutes of dead time on a lap
 
 **Decision:** Match OpenAI's [Batch object shape](https://platform.openai.com/docs/api-reference/batch) as closely as the take-home allows: `id`, `object="batch"`, `endpoint`, `model`, `status`, `created_at` (Unix seconds), `request_counts: {total, completed, failed}`, `error`. Accept inline `input` array instead of `input_file_id`. Map Ray statuses to OpenAI vocabulary: `PENDING→queued`, `RUNNING→in_progress`, `SUCCEEDED→completed`, `FAILED→failed`, `STOPPED→cancelled`.
 
-**Why:** Matching a known-good API shape makes the service immediately usable by OpenAI client SDKs with a base-URL swap. It's also the clearest signal of "this was designed intentionally" rather than "this was whatever came out of the prompt".
+**Why:** Matching a known-good API shape means the service is drop-in usable by OpenAI client SDKs with a base-URL swap, and it gave me a strong reference to design against instead of inventing field names from scratch.
 
-**Trade-off accepted:** We skip OpenAI's two-step "upload file → create batch" flow in favor of a single inline `POST` for ergonomics. Documented in `docs/API.md`.
+**Trade-off accepted:** I skipped OpenAI's two-step "upload file → create batch" flow in favor of a single inline `POST` for ergonomics. The live Swagger UI at `http://localhost:8000/docs` is the canonical REST reference.
 
 ### 2.8 Custom Ray worker image with Qwen pre-downloaded
 
 **Decision:** Build a custom image based on `rayproject/ray:2.54.1-py310-cpu`, install Transformers + Torch + the batch job script, and `snapshot_download` the Qwen2.5-0.5B weights during the image build so workers don't pull from HuggingFace Hub at runtime.
 
-**Why:** Runtime downloads from HF Hub (a) add startup latency per worker, (b) multiply by worker count, (c) fail during rate-limit events, and (d) leak the model behind a firewall during graded grading. Baking the model into the image trades a larger image (~2.5 GB) for cold-start reliability and reproducibility. `kind load docker-image` puts it directly into the cluster's containerd, so there's no registry hop.
+**Why:** Runtime downloads from HF Hub (a) add startup latency per worker, (b) multiply by worker count, and (c) hit HF's rate limits - which I saw happen on an early build. Baking the model into the image trades a larger image (roughly 2.5 GB) for cold-start reliability and reproducibility. `kind load docker-image` puts it directly into the cluster's containerd, so there's no registry hop at demo time.
 
 ### 2.9 Multi-stage Dockerfile with `uv` for the API
 

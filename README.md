@@ -31,7 +31,7 @@ The service exposes an OpenAI-shaped Batches API at `POST /v1/batches`, authenti
 
 ## Getting Started
 
-A full walkthrough from a clean laptop to real Qwen output in your terminal. For more detail, exhaustive troubleshooting, and the WSL variant, see [`docs/SETUP.md`](docs/SETUP.md).
+A full walkthrough from a clean laptop to real Qwen output in your terminal.
 
 ### 1. Prerequisites
 
@@ -261,8 +261,6 @@ make cluster-down       # nuke the kind cluster entirely
 | Ray worker `OOMKilled` | 5 GiB worker memory too low for your Qwen build | Edit `k8s/raycluster/raycluster.yaml` → worker resources → `memory: "7Gi"` |
 | Nothing on `localhost:8000` | Port-forward not running | `make port-forward` in a separate terminal |
 
-Full troubleshooting in [`docs/SETUP.md`](docs/SETUP.md) §7.
-
 ## Architecture
 
 ![System architecture](docs/images/01-architecture.png)
@@ -295,9 +293,8 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the decision log, trade-o
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - Decision log, architecture trade-offs, answers to the 5 key exercise questions
-- [`docs/SETUP.md`](docs/SETUP.md) - End-to-end Ubuntu 22.04 setup from a fresh machine
-- [`docs/API.md`](docs/API.md) - REST API reference with curl examples
 - [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) - Full technical report (dataset analysis, method comparison, evaluation, production monitoring)
+- Live API reference: Swagger at `http://localhost:8000/docs`, ReDoc at `http://localhost:8000/redoc`, raw OpenAPI at `http://localhost:8000/openapi.json`
 
 ## Repository layout
 
@@ -311,8 +308,6 @@ kuberay-batch-inference/
 ├── .gitattributes                # LF line endings for shell, YAML, Dockerfile
 ├── docs/
 │   ├── ARCHITECTURE.md           # Decision log, trade-offs, threat model
-│   ├── SETUP.md                  # End-to-end Ubuntu walkthrough
-│   ├── API.md                    # REST reference with curl examples
 │   └── TECHNICAL_REPORT.md       # 5-question deep dive + monitoring plan
 ├── k8s/
 │   ├── kind/kind-config.yaml     # single-node kind with extraPortMappings + extraMounts

@@ -4,6 +4,8 @@
 **Target model:** Qwen/Qwen2.5-0.5B-Instruct
 **Runtime:** KubeRay 1.6.0 on kind, Ray 2.54.1, Python 3.11, FastAPI
 
+> **Scope note.** This is a five-day learning sprint on Ray + KubeRay. I had not used Ray or KubeRay before starting; the design choices below come from reading the Ray and KubeRay docs, comparing a handful of reference implementations, and iterating on the mistakes the bring-up surfaced (see §3.5). Where I'm still unsure, I say so. Where a decision was pragmatic rather than deeply researched, I flag it.
+
 ---
 
 ## 0. Executive Summary
@@ -16,13 +18,13 @@ A distributed offline LLM batch inference service built in five layers:
 4. **Ray Data batch pipeline** - `ray.data.Dataset.map_batches()` with a class-based UDF that loads Qwen2.5-0.5B once per actor in Transformers and drives inference across actors in parallel.
 5. **Background status poller** - async task inside the FastAPI process that periodically queries Ray for every active batch and translates the lifecycle into the OpenAI state vocabulary (`queued → in_progress → completed/failed/cancelled`).
 
-The entire API layer is built with **strict TDD** and has **169 tests at 100% line and branch coverage** across 464 statements and 78 branches. Every line of `src/` exists because a failing test asked for it. The `--cov-fail-under=100` gate is enforced in CI.
+The API layer was built TDD-style and sits at **181 tests / 100% line and branch coverage** across 532 statements and 82 branches. Aiming for "every line exists because a failing test asked for it" was a personal discipline for the exercise - it kept me honest about scope and stopped me from speculatively adding code I didn't understand yet. The `--cov-fail-under=100` gate is enforced in CI.
 
 **Runtime verification:** the service has been brought up end-to-end on a real kind + KubeRay cluster and the exact curl from the exercise PDF has been executed against it. Real `Qwen2.5-0.5B-Instruct` inference was produced by the Ray Data pipeline - not mocked, not hypothetical. See §3.5 for the evidence and the four first-contact issues caught and fixed during that bring-up.
 
 **Spec compliance:** the `.github/workflows/ci.yaml` pipeline runs on `ubuntu-22.04` runners, satisfying the brief's "develop in Ubuntu 22.04" requirement empirically on every push.
 
-See `docs/ARCHITECTURE.md` for the decision log, version pins, and threat model. See `docs/SETUP.md` for the end-to-end Ubuntu 22.04 bring-up. See `docs/API.md` for the REST reference.
+See `docs/ARCHITECTURE.md` for the decision log, version pins, and threat model. See the root `README.md` for the end-to-end bring-up. The live Swagger UI at `http://localhost:8000/docs` is the authoritative REST reference.
 
 ---
 
@@ -174,7 +176,7 @@ The failure-path E2E tests do the same plumbing but inject an unreachable or cra
 
 ### 3.4 What's NOT tested in CI (and why)
 
-- **A full KubeRay cluster bring-up.** Would require GitHub Actions to spin up kind + KubeRay + pull the Ray worker image (~2.5 GB), taking 10+ minutes per run. Instead, this is covered **manually** by the `make up && ./scripts/smoke-test.sh` path in `docs/SETUP.md`, and the result is captured in §3.5 below - a real end-to-end run that produced real Qwen2.5-0.5B inference from the exact exercise-PDF curl.
+- **A full KubeRay cluster bring-up.** Would require GitHub Actions to spin up kind + KubeRay + pull the Ray worker image (~2.5 GB), taking 10+ minutes per run. Instead, this is covered **manually** by the `make up && ./scripts/smoke-test.sh` path documented in the root `README.md`, and the result is captured in §3.5 below - a real end-to-end run that produced real Qwen2.5-0.5B inference from the exact exercise-PDF curl.
 - **Performance / load testing.** Out of scope for a take-home. In production this would be a k6 or locust load test parameterized over batch size, prompt length, and concurrency, with the KPIs from §5 as acceptance gates.
 
 ### 3.5 End-to-end runtime verification on kind + KubeRay
@@ -207,13 +209,13 @@ The full stack has been brought up on a real (local) KubeRay cluster and the exa
 
 #### 3.5.1 Post-observability re-verification on WSL2 (2026-04-13)
 
-A second bring-up was performed on WSL2 (Ubuntu 22.04, 15 GiB RAM, 4 CPU) after the observability stack landed (structured JSON logs, Prometheus `/metrics`, `X-Request-ID` propagation, and `scripts/benchmark.py`). Three more real bugs surfaced during that run and were fixed in this commit:
+After the observability stack landed (structured JSON logs, Prometheus `/metrics`, `X-Request-ID` propagation, and `scripts/benchmark.py`), I redid the full bring-up on WSL2 (Ubuntu 22.04, 15 GiB RAM, 4 CPU) to sanity-check the new pieces. Three more issues surfaced and were fixed in the same commit pass:
 
-1. **hostPath permissions on kind's `extraMounts` target** - `make up` (not `scripts/up.sh`) skipped the host-side `chmod 0777`, and the bind-mounted `/mnt/data` inside the kind node kept kind's default `0755 root:root`. First `POST /v1/batches` returned 500 with `PermissionError: [Errno 13] Permission denied: '/data/batches/batch_...'`. Fixed by adding `docker exec $(CLUSTER_NAME)-control-plane chmod -R 0777 /mnt/data` to the Makefile's `storage` target so the fix holds regardless of how the stack is brought up.
-2. **Prometheus `http_requests_total` path-label cardinality** - `RequestIdMiddleware` labelled the metric with `request.url.path`, which includes the literal batch ULID (`/v1/batches/batch_01KP2...`). Every distinct batch created a new label series, defeating the whole point of the counter. Fixed by reading `request.scope["route"].path` after `call_next`, which Starlette populates with the matched route template (`/v1/batches/{batch_id}`). Falls back to the literal path for unmatched (404) routes. TDD: two new tests in `test_observability.py` assert the templated form appears and the literal ULID does not.
-3. **`scripts/benchmark.py` results parser** - called `json.loads()` on the whole `/results` body, which is newline-delimited JSON, and crashed with `json.decoder.JSONDecodeError: Extra data: line 2 column 1` the moment a batch had more than one request. Fixed by splitting on lines and parsing each record independently, matching how the OpenAI Batches API wire format is meant to be consumed.
+1. **hostPath permissions on kind's `extraMounts` target** - `make up` (not `scripts/up.sh`) skipped the host-side `chmod 0777`, and the bind-mounted `/mnt/data` inside the kind node kept kind's default `0755 root:root`. First `POST /v1/batches` returned 500 with `PermissionError: [Errno 13] Permission denied: '/data/batches/batch_...'`. Moved the fix into the Makefile's `storage` target (`docker exec $(CLUSTER_NAME)-control-plane chmod -R 0777 /mnt/data`) so it no longer depends on which entrypoint ran.
+2. **Prometheus `http_requests_total` path-label cardinality** - `RequestIdMiddleware` was labelling the counter with `request.url.path`, which includes the literal batch ULID. Each new batch produced a new label series, which I realised would blow up Prometheus cardinality if the system ran for any real length of time. Fixed by reading `request.scope["route"].path` after `call_next`, which Starlette populates with the matched route template (`/v1/batches/{batch_id}`), falling back to the literal path for unmatched (404) routes. TDD: two new tests in `test_observability.py`.
+3. **`scripts/benchmark.py` results parser** - I'd called `json.loads()` on the whole `/results` body, forgetting it's newline-delimited JSON. The moment a batch had more than one request it crashed with `json.decoder.JSONDecodeError: Extra data: line 2 column 1`. Fixed by splitting on lines and parsing each record independently.
 
-A fourth issue - **Ray head and both workers restarted mid-run under memory pressure** (15 GiB WSL ceiling, two 5 GiB Ray workers plus Postgres + API + HF weight load + browser) - was _not_ patched in code. The existing probe timeouts (`timeoutSeconds: 15`, `failureThreshold: 5`) were already generous; bumping them further only delays the eviction without fixing the root cause (under-provisioned host). Documented as a known limitation of the 16 GiB minimum in `docs/SETUP.md`; production sizing (`workerGroupSpecs[0].resources.requests.memory`) needs adjusting together with the host envelope, not independently.
+A fourth issue - **Ray head and both workers restarted mid-run under memory pressure** on the 15 GiB WSL box - I looked at but did not patch. The existing probe timeouts already seemed generous, and from what I read in the KubeRay docs, bumping them further would just delay the eviction without fixing the underlying fact that the host is under-provisioned for two 5 GiB Ray workers plus Postgres + API + HF weight load. Documented as a known 16 GiB-minimum limitation in the README's *Common issues* table. I'm still not 100% sure if there's a smarter probe tuning for memory-starved conditions - listed in §7 as an open question.
 
 **Empirical numbers from the WSL run** (Qwen2.5-0.5B CPU, 2 Ray workers × 2 CPU each):
 
@@ -483,3 +485,11 @@ Items that are intentionally out of scope for the take-home but required for a p
 - **vLLM CPU wheel version compatibility with Ray 2.54.1** was not verified in this build (we don't use it on CPU). Before switching to `ray.data.llm` for production, re-test with the exact versions.
 - **Qwen2.5-0.5B CPU tokens/sec on a modern laptop** is unbenchmarked for this exact stack. The ~20-60 output tok/s figure in §4.3 is an extrapolation from similar-sized models, not a measurement. The live end-to-end run in §3.5 produced correct inference output but did not measure throughput.
 - **`# pragma: no cover` on `src/main.py:59`** (`ray_client.reset()` between two `await` calls in the lifespan shutdown helper) is a coverage.py tracing blind spot that only appears on one platform + Python-version combination at a time - observed on Linux / Python 3.11, not on Windows / Python 3.12. The line IS exercised by `test_lifespan_shutdown_helper_runs_every_step`, which asserts `ray_client.ping()` raises `RuntimeError` after the helper runs (impossible unless `reset()` actually executed). The pragma is documentation of a third-party tracer quirk, not a missing test.
+
+**Things I'm still learning / would want more time on:**
+
+- **Smarter probe tuning for memory-starved RayCluster nodes.** The §3.5.1 restart was clearly a host-sizing problem, but I don't yet know whether KubeRay or Ray itself exposes knobs (e.g. `failureThreshold` ladders, GCS heartbeat tuning) that degrade more gracefully before OOM.
+- **`ray.data.llm` + vLLM CPU path.** I sketched this as the upgrade target but haven't actually got it running; I'd want a weekend to shake out the dependency matrix before claiming it works.
+- **Production secret management.** I know `API_KEY` in a committed Secret manifest is not how this should ship - I've listed Vault / AWS SM / sealed-secrets in §6 but haven't wired any of them up; I've only used environment variables in past projects.
+- **Kueue for multi-tenant batch queueing.** Mentioned in §6 because it came up repeatedly in the KubeRay community docs, but I haven't used it and don't yet have intuition for when it pays off vs. a plain Deployment queue.
+- **End-to-end OpenTelemetry tracing.** I got structured logs + Prometheus working; spans across FastAPI → Ray head → Ray workers would be the next layer, but I haven't tried it.
