@@ -157,6 +157,17 @@ class TestMetricsEndpoint:
         body = client.get("/metrics").text
         assert "/health" in body
 
+    def test_metrics_path_label_is_templated_not_literal(self, client, api_key):
+        client.get("/v1/batches/batch_ABC123", headers={"X-API-Key": api_key})
+        body = client.get("/metrics").text
+        assert "/v1/batches/{batch_id}" in body
+        assert "/v1/batches/batch_ABC123" not in body
+
+    def test_metrics_path_label_falls_back_to_literal_for_unmatched(self, client):
+        client.get("/nope-no-route-here")
+        body = client.get("/metrics").text
+        assert "/nope-no-route-here" in body
+
 
 class TestRenderMetrics:
     def test_returns_bytes_and_content_type(self):

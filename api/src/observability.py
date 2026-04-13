@@ -122,14 +122,19 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         token = request_id_var.set(rid)
         batch_token = batch_id_var.set("-")
         start = time.perf_counter()
-        path_label = request.url.path
+        literal_path = request.url.path
         try:
             response: Response = await call_next(request)
             status_code = response.status_code
         except Exception:
-            http_requests_total.labels(request.method, path_label, "500").inc()
+            http_requests_total.labels(request.method, literal_path, "500").inc()
             raise
         finally:
+            # Prefer the matched route template (e.g. /v1/batches/{batch_id})
+            # over the literal URL path so Prometheus label cardinality stays
+            # bounded regardless of how many distinct batch IDs flow through.
+            route = request.scope.get("route")
+            path_label = getattr(route, "path", None) or literal_path
             duration = time.perf_counter() - start
             http_request_duration_seconds.labels(request.method, path_label).observe(duration)
             request_id_var.reset(token)
