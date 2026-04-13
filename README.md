@@ -29,52 +29,200 @@ The service exposes an OpenAI-shaped Batches API at `POST /v1/batches`, authenti
 | **Spec compliance** | Ubuntu 22.04 requirement verified empirically by the CI runner on every commit |
 | **TDD discipline** | Every line in `api/src/` driven by a failing test first. `--cov-fail-under=100` gate enforced in CI. |
 
-## Quick Demo
+## Getting Started
+
+A full walkthrough from a clean laptop to real Qwen output in your terminal. For more detail, exhaustive troubleshooting, and the WSL variant, see [`docs/SETUP.md`](docs/SETUP.md).
+
+### 1. Prerequisites
+
+Target environment: **Ubuntu 22.04** (per the exercise spec). Ubuntu 24.04, WSL2 (Ubuntu 22.04 or 24.04), and macOS with Docker Desktop all work too.
+
+| Tool | Min version | Why |
+|---|---|---|
+| Docker | 24+ | Container runtime for kind |
+| kind | 0.24+ | Local single-node Kubernetes cluster |
+| kubectl | 1.29+ | Kubernetes CLI |
+| Helm | 3.15+ | Installs the KubeRay operator |
+| Python | 3.11 | API runtime (3.12 also works; `uv` pins 3.11 in CI) |
+| Make | any | Orchestration |
+| jq | any | Pretty-prints JSON in smoke-test.sh |
+
+**Hardware:** at least **8 CPU cores** and **16 GiB RAM free**. The Ray head + 2 workers alone reserve 5 CPU / 13 GiB.
+
+If you don't have any of these yet, skip to step 3 — the setup script installs everything.
+
+### 2. Clone the repo
 
 ```bash
-# 1. One-shot bring-up: kind cluster + KubeRay + Ray cluster + Postgres + API
-make up
+git clone https://github.com/Sebuliba-Adrian/kuberay-batch-inference.git
+cd kuberay-batch-inference
+```
 
-# 2. Submit a batch (this is the exact call from the exercise PDF)
+### 3. One-shot install on a fresh Ubuntu host
+
+```bash
+bash scripts/setup.sh
+```
+
+Idempotent. Installs Docker, kind, kubectl, Helm, uv, and jq. Asks for `sudo` once. If Docker was freshly installed, log out and back in (or `newgrp docker`) so your user picks up the `docker` group without `sudo`.
+
+Verify:
+
+```bash
+docker ps                   # should work without sudo
+kind --version              # 0.24+
+kubectl version --client    # 1.29+
+helm version                # 3.15+
+python3 --version           # 3.11+
+```
+
+### 4. Bring up the full stack
+
+One command boots everything — kind cluster, KubeRay operator, RayCluster, Postgres, shared PVC, API, and port-forward.
+
+```bash
+make up
+```
+
+First run takes **~5-10 minutes**. Most of that is the Ray worker image build, which bakes Qwen2.5-0.5B-Instruct into the container so runtime never depends on Hugging Face being reachable. Subsequent `make up` runs reuse the existing cluster and skip steps that already succeeded.
+
+Verify the stack is healthy:
+
+```bash
+kubectl -n ray get pods
+# NAME                             READY   STATUS    RESTARTS   AGE
+# batch-api-xxxxxxxxxx-xxxxx       1/1     Running   0          2m
+# postgres-xxxxxxxxxx-xxxxx        1/1     Running   0          2m
+# qwen-raycluster-head-xxxxx       1/1     Running   0          2m
+# qwen-raycluster-worker-xxxxx     1/1     Running   0          2m
+# qwen-raycluster-worker-xxxxx     1/1     Running   0          2m
+
+curl http://localhost:8000/health
+# {"status":"ok"}
+
+curl http://localhost:8000/ready | jq .
+# {
+#   "status": "ok",
+#   "checks": { "postgres": "ok", "ray": "ok" }
+# }
+```
+
+### 5. Submit the exact exercise-PDF curl
+
+Export the API key (default value — override via `API_KEY` env var on the Deployment for real use):
+
+```bash
+export API_KEY="demo-api-key-change-me-in-production"
+```
+
+Submit:
+
+```bash
 curl -X POST http://localhost:8000/v1/batches \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $(cat .env | grep API_KEY | cut -d= -f2)" \
+  -H "X-API-Key: $API_KEY" \
   -d '{
     "model": "Qwen/Qwen2.5-0.5B-Instruct",
     "input": [{"prompt": "What is 2+2?"}, {"prompt": "Hello world"}],
     "max_tokens": 50
-  }'
-# -> 200 OK
-# {
-#   "id": "batch_01JABCD...",
-#   "object": "batch",
-#   "endpoint": "/v1/batches",
-#   "model": "Qwen/Qwen2.5-0.5B-Instruct",
-#   "status": "queued",
-#   "created_at": 1744380000,
-#   "request_counts": {"total": 2, "completed": 0, "failed": 0}
-# }
-
-# 3. Poll status
-curl http://localhost:8000/v1/batches/batch_01JABCD... \
-  -H "X-API-Key: $API_KEY"
-
-# 4. Stream results (newline-delimited JSON)
-#
-# Real outputs captured from the end-to-end run against the live kind +
-# KubeRay + Qwen2.5-0.5B stack — not mocked, not hypothetical:
-curl http://localhost:8000/v1/batches/batch_01JABCD.../results \
-  -H "X-API-Key: $API_KEY"
-# {"id":"0","prompt":"What is 2+2?","response":"The answer to 2 + 2 is 4. This is a simple addition problem...","finish_reason":"stop",...}
-# {"id":"1","prompt":"Hello world","response":"Hello! How can I help you today?","finish_reason":"stop",...}
-
-# 5. (Optional) Bring up Prometheus + Grafana for the Ray dashboard
-#    time-series tab — only needed if you want live metrics panels
-#    during the demo.
-make monitoring-up     # installs into the `monitoring` namespace
-make grafana           # port-forwards Grafana to localhost:3000 (admin/admin)
-# Then refresh http://localhost:8265/#/metrics in the Ray dashboard
+  }' | jq .
 ```
+
+Response:
+
+```json
+{
+  "id": "batch_01JABCD...",
+  "object": "batch",
+  "endpoint": "/v1/batches",
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "status": "queued",
+  "created_at": 1744380000,
+  "request_counts": {"total": 2, "completed": 0, "failed": 0}
+}
+```
+
+Save the id:
+
+```bash
+BATCH=batch_01JABCD...
+```
+
+### 6. Verify authentication
+
+```bash
+# Missing header returns 401
+curl -i -X POST http://localhost:8000/v1/batches \
+  -H "Content-Type: application/json" \
+  -d '{"model":"Qwen/Qwen2.5-0.5B-Instruct","input":[{"prompt":"x"}],"max_tokens":5}'
+
+# Wrong key returns 401
+curl -i -X POST http://localhost:8000/v1/batches \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: wrong-key" \
+  -d '{"model":"Qwen/Qwen2.5-0.5B-Instruct","input":[{"prompt":"x"}],"max_tokens":5}'
+```
+
+Both return `401 Unauthorized` with `WWW-Authenticate: APIKey` per RFC 7235.
+
+### 7. Poll status
+
+```bash
+curl -s -H "X-API-Key: $API_KEY" http://localhost:8000/v1/batches/$BATCH | jq .
+```
+
+You'll see `status` progress: `queued` → `in_progress` → `completed`. The 5 s background poller drives the transitions; the GET handler reads Postgres only, never Ray directly, so status is fast and available even if Ray blinks.
+
+### 8. Fetch results
+
+```bash
+curl -s -H "X-API-Key: $API_KEY" http://localhost:8000/v1/batches/$BATCH/results
+```
+
+Streamed as `application/x-ndjson` (one JSON object per line). These are **real Qwen2.5-0.5B-Instruct generations captured from the live end-to-end run** — not mocks:
+
+```
+{"id":"0","prompt":"What is 2+2?","response":"The answer to 2 + 2 is 4. This is a simple addition problem...","finish_reason":"stop","prompt_tokens":6,"completion_tokens":24,"error":null}
+{"id":"1","prompt":"Hello world","response":"Hello! How can I help you today?","finish_reason":"stop","prompt_tokens":5,"completion_tokens":8,"error":null}
+```
+
+### 9. One-command end-to-end smoke test
+
+The everything-at-once verification: runs the exact spec curl, both auth negatives, polls until terminal, fetches results:
+
+```bash
+make smoke-test
+```
+
+### 10. (Optional) Monitoring — Prometheus + Grafana + Ray dashboards
+
+Only needed if you want live metrics panels during the demo.
+
+```bash
+make monitoring-up      # installs Prometheus + Grafana into the monitoring namespace
+make grafana            # port-forwards Grafana to localhost:3000 (admin/admin)
+```
+
+Then refresh `http://localhost:8265/#/metrics` in the Ray dashboard — the Metrics tab now iframes Grafana panels.
+
+### 11. Tear down
+
+```bash
+make down               # remove the app, keep the cluster for fast rebuilds
+make cluster-down       # nuke the kind cluster entirely
+```
+
+### Common issues
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `make up` hangs at "Waiting for RayCluster to become ready" | Worker image build didn't finish / Qwen download slow | `kubectl -n ray describe rayclusters/qwen-raycluster` — check worker pod events |
+| API pod crash-loops on boot | Postgres not ready yet | `kubectl -n ray rollout status deploy/postgres --timeout=180s` first |
+| `401 Unauthorized` with correct key | `.env` file has a stale key; Deployment uses the Secret | Check `kubectl -n ray get secret batch-api-secret -o jsonpath='{.data.API_KEY}' \| base64 -d` |
+| Ray worker `OOMKilled` | 5 GiB worker memory too low for your Qwen build | Edit `k8s/raycluster/raycluster.yaml` → worker resources → `memory: "7Gi"` |
+| Nothing on `localhost:8000` | Port-forward not running | `make port-forward` in a separate terminal |
+
+Full troubleshooting in [`docs/SETUP.md`](docs/SETUP.md) §7.
 
 ## Architecture
 
@@ -111,7 +259,6 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the decision log, trade-o
 - [`docs/SETUP.md`](docs/SETUP.md) — End-to-end Ubuntu 22.04 setup from a fresh machine
 - [`docs/API.md`](docs/API.md) — REST API reference with curl examples
 - [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) — Full technical report (dataset analysis, method comparison, evaluation, production monitoring)
-- [`docs/PRESENTATION.md`](docs/PRESENTATION.md) — Talk track for the 30-45 min demo
 
 ## Repository layout
 
@@ -127,8 +274,7 @@ kuberay-batch-inference/
 │   ├── ARCHITECTURE.md           # Decision log, trade-offs, threat model
 │   ├── SETUP.md                  # End-to-end Ubuntu walkthrough
 │   ├── API.md                    # REST reference with curl examples
-│   ├── TECHNICAL_REPORT.md       # 5-question deep dive + monitoring plan
-│   └── PRESENTATION.md           # 30-45 min talk track
+│   └── TECHNICAL_REPORT.md       # 5-question deep dive + monitoring plan
 ├── k8s/
 │   ├── kind/kind-config.yaml     # single-node kind with extraPortMappings + extraMounts
 │   ├── kuberay/values.yaml       # operator Helm values
