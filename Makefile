@@ -170,8 +170,13 @@ postgres: namespace ## Deploy Postgres for job metadata
 	kubectl -n $(NAMESPACE) rollout status deploy/postgres --timeout=120s
 
 # ─── Lifecycle: RayCluster + API ─────────────────────────────────────
+# NOTE: raycluster / raycluster-gpu do NOT depend on `storage` directly.
+# The right storage target is bootstrapper-specific (`storage` for kind,
+# `storage-k3d` for k3d), so letting the caller chain it explicitly
+# keeps us from firing the kind-only chmod against a non-existent
+# container on the k3d path.
 .PHONY: raycluster
-raycluster: namespace storage ## Apply the RayCluster manifest (CPU profile)
+raycluster: namespace ## Apply the RayCluster manifest (CPU profile). Requires `storage` to have run.
 	kubectl apply -n $(NAMESPACE) -f k8s/raycluster/raycluster.yaml
 	@echo "Waiting for RayCluster to become ready..."
 	@for i in $$(seq 1 60); do \
@@ -184,7 +189,7 @@ raycluster: namespace storage ## Apply the RayCluster manifest (CPU profile)
 	exit 1
 
 .PHONY: raycluster-gpu
-raycluster-gpu: namespace storage ## Apply the RayCluster manifest (GPU profile)
+raycluster-gpu: namespace ## Apply the RayCluster manifest (GPU profile). Requires `storage` or `storage-k3d` to have run.
 	kubectl apply -n $(NAMESPACE) -f k8s/raycluster/raycluster.gpu.yaml
 	@echo "Waiting for RayCluster (GPU profile) to become ready..."
 	@for i in $$(seq 1 60); do \
