@@ -1,0 +1,25 @@
+# Ray worker runtime deps for GPU-accelerated Qwen2.5-0.5B inference.
+#
+# Mirrors requirements.txt but pulls CUDA 12.1 PyTorch wheels instead of
+# the CPU-only wheels. Keep the non-torch pins in sync between the two
+# files so behavior is identical aside from the device.
+#
+# Targets NVIDIA GPUs with CUDA 12.1+ drivers (A10, A100, L4, H100, T4
+# with a recent driver). For CUDA 11.8 stacks, swap the extra index URL
+# to https://download.pytorch.org/whl/cu118 and pin torch==2.3.1+cu118.
+
+--index-url https://pypi.org/simple
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+# Model runtime (CUDA build)
+torch==2.3.1+cu121
+transformers>=4.45,<5
+accelerate>=0.34,<1
+safetensors>=0.4.5
+
+# HF hub (for snapshot_download during image build)
+huggingface_hub>=0.25,<1
+
+# Tokenizer deps - required by Qwen2.5's tokenizer
+sentencepiece>=0.2.0
+protobuf>=4.25
