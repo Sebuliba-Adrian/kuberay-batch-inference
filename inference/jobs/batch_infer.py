@@ -67,8 +67,16 @@ class QwenPredictor:
     Stateful Ray Data actor that loads Qwen once and serves generations.
 
     Kept dependency-light on purpose: only torch + transformers, no vLLM.
-    Runs on CPU in BF16 by default; swap to ``dtype=torch.float16`` and
-    ``device="cuda"`` for GPU.
+    Device selection is automatic:
+
+      * CUDA available -> device="cuda", dtype=bfloat16
+        (bf16 runs natively on A10/A100/L4/H100; on older T4 we fall
+        back to float16, which T4 has dedicated tensor-core kernels for)
+      * CUDA unavailable -> device="cpu", dtype=bfloat16
+        (CPU path unchanged from the pre-GPU-profile behavior)
+
+    The CPU code path is byte-identical to the original implementation;
+    the only new behavior is triggered when torch.cuda.is_available().
     """
 
     def __init__(self, model_name: str, max_tokens: int) -> None:
@@ -85,7 +93,21 @@ class QwenPredictor:
         self._max_tokens = max_tokens
         self._model_name = model_name
 
-        # 2. trust_remote_code is required for Qwen2.5's tokenizer
+        # 2. Device selection. On a CPU worker pod this collapses to the
+        # original "bf16 on cpu" path. On a GPU worker pod with a CUDA
+        # torch build, we pick cuda and select a dtype the GPU actually
+        # has fast kernels for.
+        if torch.cuda.is_available():
+            self._device = "cuda"
+            # T4 (compute cap 7.5) has no bf16 tensor cores; Ampere+
+            # (A10/A100/L4/H100, cap 8.0+) does. Pick accordingly.
+            cap_major = torch.cuda.get_device_capability(0)[0]
+            self._dtype = torch.bfloat16 if cap_major >= 8 else torch.float16
+        else:
+            self._device = "cpu"
+            self._dtype = torch.bfloat16
+
+        # 3. trust_remote_code is required for Qwen2.5's tokenizer
         # (custom chat template handler).
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name,
@@ -95,22 +117,26 @@ class QwenPredictor:
         if self.tokenizer.pad_token_id is None:
             self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
-        # 3. BF16 weights ~ 1 GB on disk, usable on modern CPUs. If the
-        # host lacks BF16 kernels, torch silently upcasts to FP32 which
-        # works but doubles memory. 0.5 B params means this is tolerable.
+        # 4. Load weights. low_cpu_mem_usage streams weights into place
+        # rather than materializing a second copy in RAM during init;
+        # useful on both CPU (tight memory limits) and GPU (avoids a
+        # host-side spike before the .to(device) move).
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=self._dtype,
             trust_remote_code=True,
             low_cpu_mem_usage=True,
         )
+        if self._device == "cuda":
+            self.model.to(self._device)
         self.model.eval()
 
         log.info(
-            "Loaded model %s in %.1fs (dtype=%s, device=cpu)",
+            "Loaded model %s in %.1fs (dtype=%s, device=%s)",
             model_name,
             time.monotonic() - t0,
             self.model.dtype,
+            self._device,
         )
 
     def _format_prompt(self, user_prompt: str) -> str:
@@ -157,6 +183,10 @@ class QwenPredictor:
                     truncation=True,
                     max_length=2048,
                 )
+                # On GPU, move tokenized tensors to device before
+                # generate(). On CPU this is a no-op (same device).
+                if self._device == "cuda":
+                    inputs = {k: v.to(self._device) for k, v in inputs.items()}
                 # Keep the prompt-token count for downstream billing /
                 # metrics. Subtract one if you consider BOS "not counted".
                 prompt_tokens_out[idx] = int(inputs["input_ids"].shape[1])
