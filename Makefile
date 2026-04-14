@@ -19,6 +19,7 @@ KUBERAY_NAMESPACE       ?= kuberay-system
 RAYCLUSTER_NAME         ?= qwen-raycluster
 API_IMAGE               ?= local/batch-api:dev
 WORKER_IMAGE            ?= local/ray-worker:$(RAY_VERSION)-cpu
+WORKER_IMAGE_GPU        ?= local/ray-worker:$(RAY_VERSION)-gpu
 
 # ─── Help ────────────────────────────────────────────────────────────
 .PHONY: help
@@ -74,13 +75,25 @@ build-api: ## Build the FastAPI proxy image
 build-worker: ## Build the Ray worker image with Qwen2.5-0.5B baked in
 	docker build -t $(WORKER_IMAGE) -f inference/Dockerfile inference/
 
+.PHONY: build-worker-gpu
+build-worker-gpu: ## Build the GPU Ray worker image (CUDA 12.1 torch)
+	docker build -t $(WORKER_IMAGE_GPU) -f inference/Dockerfile.gpu inference/
+
 .PHONY: build-images
 build-images: build-api build-worker ## Build all container images
+
+.PHONY: build-images-gpu
+build-images-gpu: build-api build-worker-gpu ## Build API + GPU worker images
 
 .PHONY: load-images
 load-images: ## Load custom images into the kind cluster
 	kind load docker-image $(API_IMAGE) --name $(CLUSTER_NAME)
 	kind load docker-image $(WORKER_IMAGE) --name $(CLUSTER_NAME)
+
+.PHONY: load-images-gpu
+load-images-gpu: ## Load API + GPU worker images into kind
+	kind load docker-image $(API_IMAGE) --name $(CLUSTER_NAME)
+	kind load docker-image $(WORKER_IMAGE_GPU) --name $(CLUSTER_NAME)
 
 # ─── Lifecycle: Namespace + storage + postgres ───────────────────────
 .PHONY: namespace
@@ -105,9 +118,22 @@ postgres: namespace ## Deploy Postgres for job metadata
 
 # ─── Lifecycle: RayCluster + API ─────────────────────────────────────
 .PHONY: raycluster
-raycluster: namespace storage ## Apply the RayCluster manifest
+raycluster: namespace storage ## Apply the RayCluster manifest (CPU profile)
 	kubectl apply -n $(NAMESPACE) -f k8s/raycluster/raycluster.yaml
 	@echo "Waiting for RayCluster to become ready..."
+	@for i in $$(seq 1 60); do \
+		state=$$(kubectl -n $(NAMESPACE) get raycluster $(RAYCLUSTER_NAME) -o jsonpath='{.status.state}' 2>/dev/null); \
+		if [ "$$state" = "ready" ]; then echo "✓ RayCluster ready"; exit 0; fi; \
+		sleep 5; \
+	done; \
+	echo "ERROR: RayCluster did not become ready in 5 minutes"; \
+	kubectl -n $(NAMESPACE) get pods; \
+	exit 1
+
+.PHONY: raycluster-gpu
+raycluster-gpu: namespace storage ## Apply the RayCluster manifest (GPU profile)
+	kubectl apply -n $(NAMESPACE) -f k8s/raycluster/raycluster.gpu.yaml
+	@echo "Waiting for RayCluster (GPU profile) to become ready..."
 	@for i in $$(seq 1 60); do \
 		state=$$(kubectl -n $(NAMESPACE) get raycluster $(RAYCLUSTER_NAME) -o jsonpath='{.status.state}' 2>/dev/null); \
 		if [ "$$state" = "ready" ]; then echo "✓ RayCluster ready"; exit 0; fi; \
@@ -125,6 +151,9 @@ api: namespace postgres ## Deploy the FastAPI proxy
 # ─── Lifecycle: Full up / down ───────────────────────────────────────
 .PHONY: up
 up: cluster-up kuberay-install build-images load-images namespace storage postgres raycluster api port-forward ## Bring up EVERYTHING: kind + KubeRay + RayCluster + API + postgres
+
+.PHONY: up-gpu
+up-gpu: cluster-up kuberay-install build-images-gpu load-images-gpu namespace storage postgres raycluster-gpu api port-forward ## Bring up EVERYTHING on the GPU profile (requires GPU-capable cluster + NVIDIA device plugin)
 
 .PHONY: down
 down: ## Tear down everything (keeps the kind cluster - use `make cluster-down` to nuke)
