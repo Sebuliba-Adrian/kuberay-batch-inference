@@ -211,10 +211,10 @@ api: namespace postgres ## Deploy the FastAPI proxy
 up: cluster-up kuberay-install build-images load-images namespace storage postgres raycluster api port-forward ## Bring up EVERYTHING: kind + KubeRay + RayCluster + API + postgres
 
 .PHONY: up-gpu
-up-gpu: cluster-up kuberay-install build-images-gpu load-images-gpu namespace storage postgres raycluster-gpu api port-forward ## Bring up EVERYTHING on the GPU profile (requires GPU-capable cluster + NVIDIA device plugin)
+up-gpu: cluster-up kuberay-install build-images-gpu load-images-gpu namespace storage postgres raycluster-gpu api port-forward ## GPU profile via kind (NOTE: mainline kind has no GPU passthrough - use only if your kind node inherits GPU access out-of-band; for laptop GPU use up-gpu-local)
 
 .PHONY: up-gpu-local
-up-gpu-local: cluster-up-k3d nvidia-plugin kuberay-install build-images-gpu load-images-gpu-k3d namespace storage-k3d postgres raycluster-gpu api port-forward ## Bring up EVERYTHING on a local k3d cluster with laptop GPU (requires nvidia-container-toolkit on host)
+up-gpu-local: cluster-up-k3d nvidia-plugin kuberay-install build-images-gpu load-images-gpu-k3d namespace storage-k3d postgres raycluster-gpu api port-forward ## GPU profile via k3d (the laptop GPU path - requires nvidia-container-toolkit on host)
 
 .PHONY: down
 down: ## Tear down everything (keeps the kind cluster - use `make cluster-down` to nuke)
