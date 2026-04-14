@@ -264,16 +264,32 @@ def run_batch(batch_id: str, model: str, max_tokens: int) -> dict[str, int]:
     log.info("Read %d prompts; repartitioning to %d blocks", total, max(2, total // 16 or 2))
     ds = ds.repartition(max(2, total // 16 or 2))
 
-    # 2. Spin up the predictor actor pool with concurrency = worker count.
-    # Each actor holds one model replica. batch_size tunes how many
-    # prompts each __call__ invocation processes at once - small is safer
-    # on CPU because OOM risk scales with batch size.
-    log.info("Running map_batches with concurrency=2 batch_size=8")
+    # 2. Spin up the predictor actor pool. Topology depends on what the
+    # cluster actually has: on a CPU-only RayCluster we stick with the
+    # original 2 actors x batch_size=8. On a GPU RayCluster we reserve
+    # one GPU per actor and raise batch_size, because GPU throughput
+    # scales with batch size far more than CPU does.
+    cluster_resources = ray.cluster_resources()
+    gpu_count = int(cluster_resources.get("GPU", 0))
+    if gpu_count > 0:
+        concurrency = gpu_count
+        batch_size = 32
+        num_gpus_per_actor: float = 1.0
+    else:
+        concurrency = 2
+        batch_size = 8
+        num_gpus_per_actor = 0.0
+
+    log.info(
+        "Running map_batches concurrency=%d batch_size=%d num_gpus=%.1f (cluster GPUs=%d)",
+        concurrency, batch_size, num_gpus_per_actor, gpu_count,
+    )
     out_ds = ds.map_batches(
         QwenPredictor,
         fn_constructor_kwargs={"model_name": model, "max_tokens": max_tokens},
-        concurrency=2,
-        batch_size=8,
+        concurrency=concurrency,
+        batch_size=batch_size,
+        num_gpus=num_gpus_per_actor,
     )
 
     # 3. Write results as a single JSONL so the API can stream it back
