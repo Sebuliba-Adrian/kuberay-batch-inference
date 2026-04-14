@@ -75,9 +75,9 @@ If any of these are unfamiliar, skim this table; otherwise skip.
 
 If you want a deeper dive, read:
 
-- `docs/ARCHITECTURE_WALKTHROUGH.md` - what the pieces are and how they talk.
-- `docs/DEPLOYMENT_WALKTHROUGH.md` - operator pattern, CRDs, reconciliation.
+- `docs/ARCHITECTURE.md` - the design rationale and trade-offs.
 - `docs/GPU_PROFILE.md` - what the GPU profile changes vs. CPU.
+- `docs/TECHNICAL_REPORT.md` - benchmark numbers and production considerations.
 
 ---
 
@@ -560,8 +560,10 @@ stack on your laptop. Natural next experiments:
 - **Monitor.** `make monitoring-up && make grafana` installs
   Prometheus + Grafana + prebuilt Ray dashboards. The GPU worker
   image exposes torch/CUDA metrics via Ray's built-in exporter.
-- **Write your own operator.** The toy WebApp CRD sketch in
-  `docs/DEPLOYMENT_WALKTHROUGH.md` is a good starting point.
+- **Write your own operator.** Pick any higher-level abstraction
+  (a `WebApp` or `BatchPool` CRD, say), define the schema, and write
+  a controller that reconciles it into ordinary Deployments and
+  Services. Kubebuilder and Operator SDK are the usual scaffolds.
 
 ---
 
