@@ -7,7 +7,7 @@ Ray, and KubeRay.
 This document is written against the **`demo/single-file-version`** branch,
 where the entire FastAPI control plane lives in one file
 (`api/src/app.py`). If you are on `main`, the same functions exist but are
-split across modules under `api/src/` and `api/src/routes/` — the line
+split across modules under `api/src/` and `api/src/routes/` - the line
 numbers below will not match, but every function name will.
 
 ---
@@ -83,7 +83,7 @@ that sets up the Ray factory inside that building.*
 | Layer | Role | Where in the repo |
 |---|---|---|
 | **FastAPI** | HTTP API: validates input, authenticates, writes the batch row, submits the Ray job, streams results back. | `api/src/app.py` |
-| **Postgres** | Durable metadata ledger — batch id, status, counts, timestamps, Ray job id, file paths. Not the result payload. | `k8s/postgres/` |
+| **Postgres** | Durable metadata ledger - batch id, status, counts, timestamps, Ray job id, file paths. Not the result payload. | `k8s/postgres/` |
 | **Ray** | Python distributed runtime. Here it runs one job per submitted batch across 2 worker pods. | `inference/jobs/batch_infer.py` |
 | **Kubernetes** | Runs all of the above as pods, keeps them alive, mounts volumes, handles service discovery. | `k8s/` |
 | **KubeRay** | Kubernetes operator that teaches K8s what a `RayCluster` is. Creates head + worker pods from one YAML declaration. | `k8s/raycluster/raycluster.yaml` |
@@ -108,11 +108,11 @@ directly would:
 So the codebase splits concerns along a **control plane / compute plane**
 boundary:
 
-- **Control plane** — FastAPI. Cheap, stateless, horizontally scalable.
-- **Compute plane** — Ray workers. Heavy, stateful (model is loaded once
+- **Control plane** - FastAPI. Cheap, stateless, horizontally scalable.
+- **Compute plane** - Ray workers. Heavy, stateful (model is loaded once
   per actor), scaled independently.
-- **Ledger** — Postgres. Small, queryable, durable job state.
-- **Handoff medium** — shared PVC. Large opaque payloads that neither
+- **Ledger** - Postgres. Small, queryable, durable job state.
+- **Handoff medium** - shared PVC. Large opaque payloads that neither
   belong in the DB nor over HTTP.
 
 ---
@@ -133,7 +133,7 @@ time:
 | Apache/PHP app | **FastAPI pod** |
 | Cron job / `supervisord` worker | **Ray job** on the Ray cluster |
 
-You are not learning alien concepts — the same operational questions
+You are not learning alien concepts - the same operational questions
 (where do config values live, where does data persist, how do services
 find each other) have different mechanical answers.
 
@@ -191,8 +191,8 @@ last, a reader who sees it can assume `results.jsonl` is fully flushed.
 
 ### Why not store everything in Postgres?
 
-Postgres is excellent for **small, queryable metadata** — status, counts,
-timestamps, ids — and terrible for **streaming large NDJSON payloads**.
+Postgres is excellent for **small, queryable metadata** - status, counts,
+timestamps, ids - and terrible for **streaming large NDJSON payloads**.
 The design uses each tool for what it is good at:
 
 - Postgres = ledger (rows describe batches).
@@ -230,8 +230,8 @@ The handler is `create_batch` at `api/src/app.py:694`. Its steps:
    prompt, assigning row ids `"0"`, `"1"`, `"2"`, ….
 3. **Insert Postgres row.** A `Batch` ORM row (`api/src/app.py:214`) is
    persisted with `status="queued"`, counts, and the input/result paths.
-4. **Submit to Ray.** The handler builds an entrypoint command string —
-   `python /app/jobs/batch_infer.py --batch-id <id> --model <...> --max-tokens <n>` —
+4. **Submit to Ray.** The handler builds an entrypoint command string -
+   `python /app/jobs/batch_infer.py --batch-id <id> --model <...> --max-tokens <n>` -
    and calls `ray_submit_batch(...)` at `api/src/app.py:442`. That
    function wraps `JobSubmissionClient.submit_job` in
    `starlette.concurrency.run_in_threadpool` because the SDK is sync
@@ -241,7 +241,7 @@ The handler is `create_batch` at `api/src/app.py:694`. Its steps:
    the poller and `GET` handlers can later look it up.
 6. **Respond.** The handler returns a `BatchObject`
    (`api/src/app.py:192`) with the id, status (`queued`), model, and
-   timestamps. No results yet — the client will poll for those.
+   timestamps. No results yet - the client will poll for those.
 
 The handler is `async` from top to bottom. Every blocking call (DB,
 filesystem writes, Ray SDK) is either native-async (SQLAlchemy async,
@@ -270,9 +270,9 @@ filesystem on the request path.
 
 ### 7.4 Status and results reads
 
-- `get_batch_status` (`api/src/app.py:763`) — pure DB read, returns the
+- `get_batch_status` (`api/src/app.py:763`) - pure DB read, returns the
   current `BatchObject`.
-- `get_batch_results` (`api/src/app.py:789`) — confirms `status="completed"`,
+- `get_batch_results` (`api/src/app.py:789`) - confirms `status="completed"`,
   then returns a `StreamingResponse` that wraps
   `iter_results_ndjson(...)` (`api/src/app.py:353`). The file is streamed
   line by line; the API never buffers the whole payload in memory.
@@ -317,13 +317,13 @@ Why each step:
 3. **`map_batches(QwenPredictor, ...)`** is the heart of the pipeline.
    Ray Data instantiates two actors (one per worker, because
    `concurrency=2`), each running `QwenPredictor.__call__` on chunks of
-   `batch_size=8`. The actors are long-lived — the model is loaded once
+   `batch_size=8`. The actors are long-lived - the model is loaded once
    in `__init__` and reused for every chunk.
 4. **`repartition(1)`** forces a single output block, so the job writes
    exactly one JSON file to the staging directory. (For multi-GB outputs
    you would drop this and stream many files.)
 5. **Atomic rename** makes `results.jsonl` appear in its final location
-   in one operation — a reader never sees a half-written file at that
+   in one operation - a reader never sees a half-written file at that
    path.
 6. **`_SUCCESS` is written last** so its presence proves
    `results.jsonl` is complete.
@@ -333,12 +333,12 @@ Why each step:
 `QwenPredictor` (`inference/jobs/batch_infer.py:65`) is a class with two
 phases:
 
-- **`__init__`** — expensive, runs once per actor: imports `torch`
+- **`__init__`** - expensive, runs once per actor: imports `torch`
   and `transformers`, loads the Qwen2.5-0.5B tokenizer and model in
   `bfloat16`, sets eval mode. Imports live *inside* `__init__` so Ray
   does not attempt to pickle torch/transformers when shipping the class
   to the actor.
-- **`__call__`** — runs per chunk: for each prompt, formats it with
+- **`__call__`** - runs per chunk: for each prompt, formats it with
   `apply_chat_template`, tokenizes, generates with deterministic
   settings (`do_sample=False`), slices off the prompt tokens to keep
   only the completion, decodes, and packs everything into same-length
@@ -353,7 +353,7 @@ left-padded batched `generate` for throughput.
 ### 8.4 Error isolation
 
 Row-level errors (one bad prompt) are caught inside `__call__` and
-recorded in the `error` column — the batch keeps going. Job-level errors
+recorded in the `error` column - the batch keeps going. Job-level errors
 (model failed to load, disk full, OOM) propagate up and write `_FAILED`.
 Two layers of failure handling, two different outcomes:
 
@@ -370,10 +370,10 @@ Two pod roles in the RayCluster, with very different jobs.
 
 | | **Head pod** | **Worker pods** |
 |---|---|---|
-| Responsibility | Cluster brain — Jobs API, scheduling, dashboard, state | Compute — run actors, hold the model, do generation |
+| Responsibility | Cluster brain - Jobs API, scheduling, dashboard, state | Compute - run actors, hold the model, do generation |
 | Count in this repo | 1 | 2 (`k8s/raycluster/raycluster.yaml:173`) |
 | Listens on | `:8265` (Jobs REST + dashboard), `:6379` (GCS) | Internal Ray ports |
-| CPU for tasks | **`num-cpus: "0"`** — zero compute on purpose (`k8s/raycluster/raycluster.yaml:91`) | Full CPU allocation |
+| CPU for tasks | **`num-cpus: "0"`** - zero compute on purpose (`k8s/raycluster/raycluster.yaml:91`) | Full CPU allocation |
 | Who calls it | FastAPI (via `RAY_ADDRESS`) | Only the head, internally |
 
 Setting `num-cpus: "0"` on the head is deliberate. Scheduling and health
@@ -390,20 +390,20 @@ Ray, one level deeper.
 
 | Term | What it is | Used here? |
 |---|---|---|
-| **Ray Core** | Low-level tasks, actors, object store. Underpins everything else. | Indirectly — Ray Data sits on top. |
-| **Ray Cluster** | One running instance of Ray: head + workers. | Yes — created by KubeRay. |
-| **Ray Data** | Distributed dataset library (`read_json`, `repartition`, `map_batches`, `write_json`). | **Yes** — the whole batch pipeline. |
-| **Ray Jobs** | A runtime REST API (`:8265`) for submitting entrypoints to an existing cluster. | **Yes** — FastAPI uses `JobSubmissionClient`. |
-| **Ray Serve** | Online model serving with HTTP autoscaling. | No — this is offline batch. |
-| **KubeRay** | Kubernetes operator defining the `RayCluster`, `RayJob`, `RayService` CRDs. | **Yes** — creates the cluster. |
+| **Ray Core** | Low-level tasks, actors, object store. Underpins everything else. | Indirectly - Ray Data sits on top. |
+| **Ray Cluster** | One running instance of Ray: head + workers. | Yes - created by KubeRay. |
+| **Ray Data** | Distributed dataset library (`read_json`, `repartition`, `map_batches`, `write_json`). | **Yes** - the whole batch pipeline. |
+| **Ray Jobs** | A runtime REST API (`:8265`) for submitting entrypoints to an existing cluster. | **Yes** - FastAPI uses `JobSubmissionClient`. |
+| **Ray Serve** | Online model serving with HTTP autoscaling. | No - this is offline batch. |
+| **KubeRay** | Kubernetes operator defining the `RayCluster`, `RayJob`, `RayService` CRDs. | **Yes** - creates the cluster. |
 
 ### Two things both called "Ray Jobs"
 
 A subtle trap worth flagging:
 
-- **Ray Jobs API** — runtime REST submission to a running cluster. This
+- **Ray Jobs API** - runtime REST submission to a running cluster. This
   repo uses it.
-- **`RayJob` CRD** — a Kubernetes object (managed by KubeRay) that spins
+- **`RayJob` CRD** - a Kubernetes object (managed by KubeRay) that spins
   up a fresh RayCluster, runs one entrypoint, and tears down. This repo
   **deliberately does not** use it for per-request batches: a cold
   cluster takes tens of seconds to start, which is worse than keeping a
@@ -423,9 +423,9 @@ One sentence to remember the whole vocabulary:
 Centralised in the `Settings` class (`api/src/app.py:100`), which is a
 `pydantic-settings` `BaseSettings`. Env vars come from:
 
-- `k8s/api/configmap.yaml` — non-secret values (`RAY_ADDRESS`,
+- `k8s/api/configmap.yaml` - non-secret values (`RAY_ADDRESS`,
   `RESULTS_DIR`, `MODEL_NAME`).
-- `k8s/api/deployment.yaml:76-96` — `POSTGRES_URL` is assembled from
+- `k8s/api/deployment.yaml:76-96` - `POSTGRES_URL` is assembled from
   the Postgres `Secret` at deploy time.
 
 Secrets are typed as `SecretStr` so they never accidentally get logged
@@ -442,7 +442,7 @@ timing side-channels, and returns `401` with
 
 - **Structured JSON logs** with a `ContextVar`-scoped `request_id` and
   `batch_id` on every line.
-- **`X-Request-ID`** round-tripped by a middleware — clients can trace
+- **`X-Request-ID`** round-tripped by a middleware - clients can trace
   one request across all log lines.
 - **`/metrics`** exposes Prometheus counters in a dedicated
   `CollectorRegistry`: `http_requests_total`, `batch_submitted_total`,
@@ -454,7 +454,7 @@ timing side-channels, and returns `401` with
 
 ### 11.4 Tests (main branch only)
 
-The `demo/single-file-version` branch has no tests by design — see
+The `demo/single-file-version` branch has no tests by design - see
 `BRANCH_NOTE.md`. On `main`, the split-module layout has 169 tests at
 100% line + branch coverage, enforced by `--cov-fail-under=100` in CI.
 
@@ -508,20 +508,20 @@ And the one-paragraph description to give at a whiteboard:
 
 ## 14. Where to read next
 
-Follow this order — web app first, worker platform second:
+Follow this order - web app first, worker platform second:
 
-1. `api/src/app.py` top to bottom (this branch) — the FastAPI side in
+1. `api/src/app.py` top to bottom (this branch) - the FastAPI side in
    one file.
-2. `k8s/api/deployment.yaml` — how the API pod is configured and
+2. `k8s/api/deployment.yaml` - how the API pod is configured and
    connected to Postgres, Ray, and the PVC.
-3. `k8s/storage/shared-pvc.yaml` + `k8s/postgres/` — the persistence
+3. `k8s/storage/shared-pvc.yaml` + `k8s/postgres/` - the persistence
    layer.
-4. `inference/jobs/batch_infer.py` — the Ray side: `QwenPredictor` and
+4. `inference/jobs/batch_infer.py` - the Ray side: `QwenPredictor` and
    `run_batch`.
-5. `k8s/raycluster/raycluster.yaml` — the declarative Ray cluster:
+5. `k8s/raycluster/raycluster.yaml` - the declarative Ray cluster:
    head, workers, volumes, resources.
-6. `docs/ARCHITECTURE.md` + `docs/TECHNICAL_REPORT.md` — design
+6. `docs/ARCHITECTURE.md` + `docs/TECHNICAL_REPORT.md` - design
    rationale, benchmark numbers, production considerations.
 
-If you internalise steps 1–5, you can explain any request in this
+If you internalise steps 1-5, you can explain any request in this
 system from the curl to the token, and that is the bar.
