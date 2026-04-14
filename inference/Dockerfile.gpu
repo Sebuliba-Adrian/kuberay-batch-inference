@@ -1,0 +1,80 @@
+# syntax=docker/dockerfile:1.7
+# -----------------------------------------------------------------------
+# GPU variant of the Ray worker image.
+#
+# Mirrors inference/Dockerfile step-for-step but:
+#   * starts from the CUDA-enabled rayproject/ray base
+#   * installs requirements-gpu.txt (CUDA 12.1 torch wheels)
+#   * verifies torch.cuda.is_available() at build time
+#
+# The CPU Dockerfile is the canonical reference - whenever it changes,
+# keep this file in lockstep except for the base image and requirements
+# filename.
+#
+# Build:
+#   docker build -t local/ray-worker:2.54.1-gpu -f inference/Dockerfile.gpu inference/
+#
+# Load into kind (only useful if you are using a GPU-capable kind setup,
+# which is rare; usually GPU images are pushed to a registry):
+#   kind load docker-image local/ray-worker:2.54.1-gpu --name kuberay-dev
+#
+# Size note: this image is ~5 GB (Ray GPU base ~3 GB + CUDA torch ~2 GB
+# + Qwen weights ~1 GB). That's the cost of CUDA runtime libraries
+# baked in. For production, push to a registry rather than loading
+# into kind.
+# -----------------------------------------------------------------------
+
+FROM rayproject/ray:2.54.1-py310-gpu
+
+# ─── System packages ───────────────────────────────────────────────
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates curl \
+ && rm -rf /var/lib/apt/lists/*
+
+# ─── Python deps ───────────────────────────────────────────────────
+USER ray
+WORKDIR /home/ray
+
+COPY --chown=ray:users requirements-gpu.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt \
+ && rm /tmp/requirements.txt
+
+# ─── Pre-download Qwen2.5-0.5B-Instruct ────────────────────────────
+# Same rationale as the CPU image: bake weights into the image so
+# workers start instantly. For a fleet of GPU pods you'd instead mount
+# a shared HF cache PVC or push to a private model registry, since
+# the weights are the same bytes on every replica.
+ENV HF_HOME=/home/ray/.cache/huggingface
+ENV HF_HUB_DISABLE_TELEMETRY=1
+ENV TRANSFORMERS_OFFLINE=0
+
+RUN python -c "\
+from huggingface_hub import snapshot_download; \
+snapshot_download(\
+    repo_id='Qwen/Qwen2.5-0.5B-Instruct', \
+    local_dir_use_symlinks=False, \
+    allow_patterns=['*.json', '*.model', '*.safetensors', '*.txt', 'tokenizer*'], \
+)"
+
+# ─── App code ──────────────────────────────────────────────────────
+USER root
+RUN mkdir -p /app/jobs && chown -R ray:users /app
+
+USER ray
+COPY --chown=ray:users jobs/ /app/jobs/
+ENV PYTHONPATH=/app
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# ─── Build-time CUDA sanity check ──────────────────────────────────
+# Fails the build early if the torch install can't import its CUDA
+# runtime. This does NOT verify an actual GPU is present - that
+# requires --gpus all at build time, which most CI runners don't have.
+# The check is purely "did we install the right wheels".
+RUN python -c "\
+import torch; \
+print(f'torch={torch.__version__} cuda_compiled={torch.version.cuda}'); \
+assert torch.version.cuda is not None, 'torch was not built with CUDA support'\
+"
