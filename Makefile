@@ -49,6 +49,46 @@ cluster-up: check-tools ## Create the local kind cluster
 cluster-down: ## Delete the local kind cluster
 	kind delete cluster --name $(CLUSTER_NAME)
 
+# ─── Lifecycle: k3d cluster (for local GPU) ──────────────────────────
+# kind does not support GPU passthrough. k3d does, via `--gpus all`,
+# which forwards the NVIDIA Container Toolkit plumbing into the
+# k3s containerd. The FastAPI port-forward and Ray dashboard
+# NodePort mappings match the kind profile so downstream targets
+# (port-forward, dashboard, smoke-test) work without changes.
+.PHONY: cluster-up-k3d
+cluster-up-k3d: ## Create a local k3d cluster with GPU passthrough
+	@command -v k3d >/dev/null 2>&1 || { \
+		echo "ERROR: k3d not found. Install: https://k3d.io/#installation"; exit 1; }
+	@if k3d cluster list -o json 2>/dev/null | grep -q '"name": *"$(CLUSTER_NAME)"'; then \
+		echo "✓ k3d cluster '$(CLUSTER_NAME)' already exists"; \
+	else \
+		k3d cluster create $(CLUSTER_NAME) \
+			--image rancher/k3s:$(K8S_VERSION)-k3s1 \
+			--gpus all \
+			-p "30800:30800@server:0" \
+			-p "30826:30826@server:0" \
+			--k3s-arg "--disable=traefik@server:*" \
+			--wait; \
+	fi
+	kubectl cluster-info --context k3d-$(CLUSTER_NAME)
+
+.PHONY: cluster-down-k3d
+cluster-down-k3d: ## Delete the local k3d cluster
+	k3d cluster delete $(CLUSTER_NAME)
+
+.PHONY: nvidia-plugin
+nvidia-plugin: ## Install the NVIDIA device plugin (exposes nvidia.com/gpu to K8s)
+	kubectl apply -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.15.0/deployments/static/nvidia-device-plugin.yml
+	@echo "Waiting for nvidia-device-plugin DaemonSet to become ready..."
+	kubectl -n kube-system rollout status daemonset/nvidia-device-plugin-daemonset --timeout=120s
+	@echo "Verifying the node advertises nvidia.com/gpu..."
+	@for i in $$(seq 1 30); do \
+		gpu=$$(kubectl get node -o json | jq -r '.items[0].status.allocatable."nvidia.com/gpu" // "0"'); \
+		if [ "$$gpu" != "0" ] && [ "$$gpu" != "null" ]; then echo "✓ node advertises $$gpu GPU(s)"; exit 0; fi; \
+		sleep 2; \
+	done; \
+	echo "WARNING: node does not yet advertise nvidia.com/gpu; check that the host has nvidia-container-toolkit installed."
+
 # ─── Lifecycle: KubeRay operator ─────────────────────────────────────
 .PHONY: kuberay-install
 kuberay-install: ## Install the KubeRay operator via Helm
@@ -95,6 +135,10 @@ load-images-gpu: ## Load API + GPU worker images into kind
 	kind load docker-image $(API_IMAGE) --name $(CLUSTER_NAME)
 	kind load docker-image $(WORKER_IMAGE_GPU) --name $(CLUSTER_NAME)
 
+.PHONY: load-images-gpu-k3d
+load-images-gpu-k3d: ## Load API + GPU worker images into the k3d cluster
+	k3d image import $(API_IMAGE) $(WORKER_IMAGE_GPU) -c $(CLUSTER_NAME)
+
 # ─── Lifecycle: Namespace + storage + postgres ───────────────────────
 .PHONY: namespace
 namespace: ## Create the ray namespace
@@ -110,6 +154,15 @@ storage: namespace ## Apply shared PVC for batch inputs and outputs
 	@# the fix independent of how make up was invoked and survives host/kind-node
 	@# permission-bit drift.
 	docker exec $(CLUSTER_NAME)-control-plane chmod -R 0777 /mnt/data
+
+.PHONY: storage-k3d
+storage-k3d: namespace ## Apply shared PVC and chmod the hostPath on the k3d server node
+	kubectl apply -n $(NAMESPACE) -f k8s/storage/shared-pvc.yaml
+	@# k3d's server container is named "k3d-<cluster>-server-0" (not
+	@# "<cluster>-control-plane" like kind). Same chmod reason as above:
+	@# pods run as non-root and need to mkdir under the hostPath.
+	docker exec k3d-$(CLUSTER_NAME)-server-0 mkdir -p /mnt/data
+	docker exec k3d-$(CLUSTER_NAME)-server-0 chmod -R 0777 /mnt/data
 
 .PHONY: postgres
 postgres: namespace ## Deploy Postgres for job metadata
