@@ -24,9 +24,9 @@
 #   * GPU-capable nodes in the cluster
 #   * NVIDIA device plugin installed (kubectl get daemonset -n kube-system
 #     should show nvidia-device-plugin-daemonset)
-#   * Workers can pull local/ray-worker:2.54.1-gpu. In kind this means
-#     `make build-worker-gpu load-worker-gpu` first. In a real cluster,
-#     push to a registry.
+#   * Workers can pull local/ray-worker:2.54.1-gpu. On a local k3d
+#     cluster, `make build-worker-gpu load-images-gpu-k3d` does this.
+#     On a cloud cluster, push to a registry and replace the image tag.
 #
 # The nodeSelector below is LEFT BLANK on purpose; clusters label GPU
 # nodes differently (GKE: cloud.google.com/gke-accelerator, EKS:
