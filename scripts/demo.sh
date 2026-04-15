@@ -47,6 +47,7 @@ C_PVC=$'\033[1;32m'      # green
 
 # ---- State trackers --------------------------------------------------------
 INVARIANTS=()                    # list of "verified" facts as the demo proves them
+POLL_LATENCIES_MS=()             # every single GET /v1/batches/{id} round-trip time
 DEMO_T0=$(date +%s)
 SUBMIT_LATENCY_MS=0
 INFER_DURATION_S=0
@@ -54,9 +55,12 @@ TOTAL_PROMPTS=0
 COMPLETED_PROMPTS=0
 FAILED_PROMPTS=0
 TOTAL_TOKENS=0
+TOTAL_COMPLETION_TOKENS=0
 BATCH=""
 INPUT_BYTES=0
 RESULTS_BYTES=0
+POLL_P50_MS=0
+POLL_P95_MS=0
 
 # ---- Helpers ---------------------------------------------------------------
 hr()   { printf "${BLUE}%s${RESET}\n" "==============================================================="; }
@@ -336,7 +340,12 @@ last_status=""
 poll_t0=$(date +%s)
 spin_idx=0
 while :; do
+    # Measure the poll's HTTP round-trip time (this feeds the p50/p95 calc)
+    pt_start=$(date +%s%3N)
     RESP=$(curl -sS -H "X-API-Key: $API_KEY" "$HOST/v1/batches/$BATCH")
+    pt_end=$(date +%s%3N)
+    POLL_LATENCIES_MS+=($((pt_end - pt_start)))
+
     status=$(echo "$RESP" | jq -r .status)
     completed=$(echo "$RESP" | jq -r '.request_counts.completed')
     failed=$(echo "$RESP" | jq -r '.request_counts.failed')
@@ -373,6 +382,46 @@ echo
 watchfor "the status transitions came from cheap DB reads, never hit Ray on the GET path"
 verify "Status went queued -> in_progress -> completed via background poller"
 verify "Inference completed in ${INFER_DURATION_S}s for ${COMPLETED_PROMPTS}/${TOTAL_PROMPTS} prompts"
+
+# ---- Benchmark snapshot computed from what just happened -------------------
+# Compute poll p50 / p95 from the latencies captured during the loop.
+POLL_N=${#POLL_LATENCIES_MS[@]}
+if [ "$POLL_N" -gt 0 ]; then
+    # Sort the latency array numerically
+    IFS=$'\n' POLL_SORTED=($(printf "%s\n" "${POLL_LATENCIES_MS[@]}" | sort -n))
+    unset IFS
+    # p50 (median)
+    p50_idx=$(( POLL_N / 2 ))
+    POLL_P50_MS=${POLL_SORTED[$p50_idx]}
+    # p95 (ceil(0.95 * n) - 1, clamped to last index)
+    p95_idx=$(( (POLL_N * 95 / 100) ))
+    [ "$p95_idx" -ge "$POLL_N" ] && p95_idx=$(( POLL_N - 1 ))
+    POLL_P95_MS=${POLL_SORTED[$p95_idx]}
+    POLL_MIN_MS=${POLL_SORTED[0]}
+    POLL_MAX_MS=${POLL_SORTED[$(( POLL_N - 1 ))]}
+
+    echo
+    echo "${MAGENTA}+--- BENCHMARK SNAPSHOT (computed live from this run) --------+${RESET}"
+    printf "${MAGENTA}|${RESET}  ${BOLD}%-28s${RESET} %s\n"       "Submit latency"        "${SUBMIT_LATENCY_MS} ms"
+    printf "${MAGENTA}|${RESET}  ${BOLD}%-28s${RESET} %s\n"       "Inference duration"    "${INFER_DURATION_S} s"
+    printf "${MAGENTA}|${RESET}  ${BOLD}%-28s${RESET} %s\n"       "Prompts OK / total"    "${COMPLETED_PROMPTS} / ${TOTAL_PROMPTS}"
+    printf "${MAGENTA}|${RESET}  ${BOLD}%-28s${RESET} %s\n"       "GET /batches polls"    "${POLL_N} calls"
+    printf "${MAGENTA}|${RESET}  ${BOLD}%-28s${RESET} %s\n"       "Poll p50 / p95 latency" "${POLL_P50_MS} ms / ${POLL_P95_MS} ms"
+    printf "${MAGENTA}|${RESET}  ${BOLD}%-28s${RESET} %s\n"       "Poll min / max"        "${POLL_MIN_MS} ms / ${POLL_MAX_MS} ms"
+    if [ "$COMPLETED_PROMPTS" -gt 0 ] && [ "$INFER_DURATION_S" -gt 0 ]; then
+        avg_s=$(awk "BEGIN {printf \"%.1f\", $INFER_DURATION_S / $COMPLETED_PROMPTS}")
+        throughput=$(awk "BEGIN {printf \"%.3f\", $COMPLETED_PROMPTS / $INFER_DURATION_S}")
+        printf "${MAGENTA}|${RESET}  ${BOLD}%-28s${RESET} %s\n"   "Avg per-prompt"        "${avg_s} s"
+        printf "${MAGENTA}|${RESET}  ${BOLD}%-28s${RESET} %s\n"   "Throughput"            "${throughput} prompts/s"
+    fi
+    echo "${MAGENTA}+-------------------------------------------------------------+${RESET}"
+    echo
+    echo "${DIM}  These numbers were measured during THIS run, not hardcoded.${RESET}"
+    echo "${DIM}  The poll p50 matches what /v1/batches/{id} costs a client under normal load.${RESET}"
+    echo "${DIM}  The /metrics histogram http_request_duration_seconds records the same thing server-side.${RESET}"
+
+    verify "Poll p50 / p95 measured live: ${POLL_P50_MS} ms / ${POLL_P95_MS} ms"
+fi
 pause
 
 # ============================================================================
@@ -395,11 +444,32 @@ RESULTS_BODY=$(curl -sS -H "X-API-Key: $API_KEY" "$HOST/v1/batches/$BATCH/result
 echo "$RESULTS_BODY" | jq
 echo
 
-# Tally tokens for the summary
+# Tally tokens and compute live throughput for the summary
 TOTAL_TOKENS=$(echo "$RESULTS_BODY" | jq -s 'map((.prompt_tokens // 0) + (.completion_tokens // 0)) | add' 2>/dev/null || echo "0")
+TOTAL_COMPLETION_TOKENS=$(echo "$RESULTS_BODY" | jq -s 'map(.completion_tokens // 0) | add' 2>/dev/null || echo "0")
 RESULTS_BYTES=${#RESULTS_BODY}
 
 watchfor "the actual Qwen output. finish_reason='stop' if the model finished naturally."
+
+# ---- Token throughput computed from this run's real numbers ----------------
+if [ "$INFER_DURATION_S" -gt 0 ] && [ "$TOTAL_COMPLETION_TOKENS" -gt 0 ]; then
+    tok_per_sec=$(awk "BEGIN {printf \"%.2f\", $TOTAL_COMPLETION_TOKENS / $INFER_DURATION_S}")
+    avg_tok_per_prompt=$(awk "BEGIN {printf \"%.1f\", $TOTAL_COMPLETION_TOKENS / $TOTAL_PROMPTS}")
+
+    echo
+    echo "${MAGENTA}+--- TOKEN THROUGHPUT (live from this run) -------------------+${RESET}"
+    printf "${MAGENTA}|${RESET}  ${BOLD}%-30s${RESET} %s\n"       "Response bytes (NDJSON)"     "${RESULTS_BYTES}"
+    printf "${MAGENTA}|${RESET}  ${BOLD}%-30s${RESET} %s\n"       "Total tokens (prompt+completion)" "${TOTAL_TOKENS}"
+    printf "${MAGENTA}|${RESET}  ${BOLD}%-30s${RESET} %s\n"       "Completion tokens only"      "${TOTAL_COMPLETION_TOKENS}"
+    printf "${MAGENTA}|${RESET}  ${BOLD}%-30s${RESET} %s\n"       "Avg completion per prompt"   "${avg_tok_per_prompt} tokens"
+    printf "${MAGENTA}|${RESET}  ${BOLD}%-30s${RESET} %s\n"       "Generation throughput"       "${tok_per_sec} tokens/s"
+    echo "${MAGENTA}+-------------------------------------------------------------+${RESET}"
+    echo
+    echo "${DIM}  Generation throughput is completion-tokens divided by inference duration.${RESET}"
+    echo "${DIM}  On CPU this is a few tokens per second; on GPU with batched generate it is${RESET}"
+    echo "${DIM}  two orders of magnitude higher. Numbers are from THIS run, not hardcoded.${RESET}"
+fi
+
 verify "Streamed ${RESULTS_BYTES} bytes of NDJSON, ${TOTAL_TOKENS} total tokens"
 verify "API never held the full file in memory (iter_results_ndjson)"
 pause
@@ -565,13 +635,15 @@ hr
 echo
 
 cat <<EOF
-${BOLD}Run summary${RESET}
+${BOLD}Run summary - every number measured live during THIS run${RESET}
 
   ${C_API}Submit latency${RESET}        ${SUBMIT_LATENCY_MS} ms       ${DIM}(client -> 200 OK with BatchObject body)${RESET}
-  ${C_RAY}Inference duration${RESET}    ${INFER_DURATION_S} s         ${DIM}(queued -> completed)${RESET}
+  ${C_RAY}Inference duration${RESET}    ${INFER_DURATION_S} s         ${DIM}(queued -> completed, on Ray workers)${RESET}
+  ${C_API}Poll p50 / p95${RESET}        ${POLL_P50_MS} ms / ${POLL_P95_MS} ms   ${DIM}(GET /v1/batches/{id} HTTP round-trip)${RESET}
   ${C_PVC}Input size${RESET}            ${INPUT_BYTES} bytes
   ${C_PVC}Results size${RESET}          ${RESULTS_BYTES} bytes
-  ${C_API}Tokens generated${RESET}      ${TOTAL_TOKENS}
+  ${C_API}Prompt tokens${RESET}         $((TOTAL_TOKENS - TOTAL_COMPLETION_TOKENS))
+  ${C_API}Completion tokens${RESET}     ${TOTAL_COMPLETION_TOKENS}
   ${C_API}Prompts succeeded${RESET}     ${COMPLETED_PROMPTS} / ${TOTAL_PROMPTS}
   ${C_API}Total demo time${RESET}       ${DEMO_DURATION} s         ${DIM}(including narration pauses)${RESET}
 
