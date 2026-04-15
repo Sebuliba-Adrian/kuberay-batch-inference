@@ -151,29 +151,55 @@ ${BOLD}KubeRay Batch Inference${RESET}  ${DIM}-  Self-Narrated Interactive Demo$
 
 ${DIM}HOST=${HOST}  ·  NAMESPACE=${NAMESPACE}  ·  VERBOSE=${VERBOSE}  ·  FAST=${FAST}${RESET}
 
-${MAGENTA}+----------------------------------------------------------------------+${RESET}
-${MAGENTA}|  System under test (live cluster):                                   |${RESET}
-${MAGENTA}|                                                                      |${RESET}
-${MAGENTA}|     ${C_API}[ Client ]${MAGENTA}                                                       |${RESET}
-${MAGENTA}|         |  POST /v1/batches  +  X-API-Key                            |${RESET}
-${MAGENTA}|         v                                                            |${RESET}
-${MAGENTA}|     ${C_API}[ FastAPI API Pod ]${MAGENTA}                                              |${RESET}
-${MAGENTA}|       /         \\                                                    |${RESET}
-${MAGENTA}|      v           v                                                   |${RESET}
-${MAGENTA}|  ${C_PG}[Postgres]${MAGENTA}    ${C_RAY}[Ray Head]${MAGENTA}                                            |${RESET}
-${MAGENTA}|                      \\                                               |${RESET}
-${MAGENTA}|                       v                                              |${RESET}
-${MAGENTA}|                  ${C_RAY}[Worker 1] [Worker 2]${MAGENTA}                              |${RESET}
-${MAGENTA}|                          \\         /                                 |${RESET}
-${MAGENTA}|                           v       v                                  |${RESET}
-${MAGENTA}|                       ${C_PVC}[ Shared PVC ]${MAGENTA}                                |${RESET}
-${MAGENTA}|                                                                      |${RESET}
-${MAGENTA}|  Color key:  ${C_API}control plane${MAGENTA}   ${C_RAY}compute plane${MAGENTA}   ${C_PG}metadata${MAGENTA}   ${C_PVC}storage${MAGENTA}    |${RESET}
-${MAGENTA}+----------------------------------------------------------------------+${RESET}
+${BOLD}System architecture${RESET}  ${DIM}(colors match the step narration throughout the demo)${RESET}
 
-${MAGENTA}This demo will walk the request lifecycle end to end.${RESET}
-${MAGENTA}Each step prints what is happening, what to watch for, and what was just verified.${RESET}
-${MAGENTA}A running checklist of verified invariants builds up over the demo.${RESET}
+                         +----------------+
+                         |     ${C_API}Client${RESET}     |    ${DIM}curl / SDK${RESET}
+                         +-------+--------+
+                                 |
+                                 |  ${BOLD}1.${RESET}  POST /v1/batches  +  X-API-Key
+                                 v
+             +-------------------------------------------+
+             |            ${C_API}FastAPI API Pod${RESET}                |   ${DIM}control plane${RESET}
+             |   validate . auth . ledger . submit job   |
+             +----+---------------------------------+----+
+                  |                                 |
+       ${BOLD}2.${RESET}  SQL async                        ${BOLD}3.${RESET}  Jobs REST :8265
+           SQLAlchemy                              submit_job
+                  |                                 |
+                  v                                 v
+          +---------------+                +--------------------+
+          |   ${C_PG}Postgres${RESET}    |                |     ${C_RAY}Ray Head${RESET}       |    ${DIM}scheduler only${RESET}
+          | batch row     |                |   num-cpus: 0      |
+          | status,counts |                |   Jobs API, dash   |
+          +---------------+                +----------+---------+
+                                                      |
+                                           ${BOLD}4.${RESET}  schedule actors
+                                                      |
+                                                      v
+                                     +-------------------------------+
+                                     |   ${C_RAY}Ray Worker 1${RESET}      ${C_RAY}Worker 2${RESET}    |
+                                     |   QwenPredictor actor         |   ${DIM}compute plane${RESET}
+                                     |   model loaded once per pod   |
+                                     +---------+------------+--------+
+                                               |            |
+                                      ${BOLD}5.${RESET}  read input, generate, write results
+                                               |            |
+                                               v            v
+                                     +-------------------------------+
+                                     |        ${C_PVC}Shared PVC${RESET}             |   ${DIM}file handshake${RESET}
+                                     |  input.jsonl  .  results.jsonl|
+                                     |  _SUCCESS  (written LAST)     |
+                                     +-------------------------------+
+
+${BOLD}Color key:${RESET}   ${C_API}control plane${RESET}   ${C_RAY}compute plane${RESET}   ${C_PG}metadata ledger${RESET}   ${C_PVC}storage${RESET}
+
+${BOLD}Key design calls${RESET} (that this demo will verify live):
+  - Control plane and compute plane are strictly separated; their only shared surface is the PVC.
+  - Ray Head runs with num-cpus=0 so scheduling stays responsive under compute load.
+  - _SUCCESS marker is written LAST, after the atomic rename of results.jsonl. No distributed transactions.
+  - GET /v1/batches/{id} reads Postgres only, never hits Ray. Status reads stay cheap.
+  - /metrics labels the http counter by route TEMPLATE (not literal path) to bound cardinality.
 
 ${DIM}    -- press ENTER to begin --${RESET}
 EOF
@@ -484,6 +510,88 @@ echo
 verify "Ray dashboard is one make-target away if Q&A goes deep"
 pause
 fi
+
+# ============================================================================
+# BUG LOG  -  5 real bugs caught on a live bring-up  (slide 7 equivalent)
+# ============================================================================
+echo
+hr
+printf "${BLUE}  BUG LOG  -  5 real bugs from the WSL bring-up${RESET}\n"
+hr
+echo
+cat <<EOF
+${DIM}Each of these was caught by running the stack on real hardware.${DIM}
+${DIM}Mocks passed; production would have broken. Five fixes, five PRs.${RESET}
+
+  ${BOLD}1. kind hostPath  Errno 13 on first POST${RESET}
+     ${DIM}First POST returned 500. kind extraMounts target is 0755 root-root;${RESET}
+     ${DIM}non-root pod could not write there.${RESET}
+     Fix: ${GREEN}docker exec <cluster>-control-plane chmod -R 0777 /mnt/data${RESET} in the Makefile.
+
+  ${BOLD}2. Prometheus cardinality explosion${RESET}
+     ${DIM}http_requests_total was labelled by request.url.path (literal batch ULID).${RESET}
+     ${DIM}Would have created a unique time-series per submitted batch.${RESET}
+     Fix: ${GREEN}request.scope["route"].path${RESET} (the matched route template).  Verified live in step 6.
+
+  ${BOLD}3. ray[client] vs ray[default] extras${RESET}
+     ${DIM}API pod crash-looped at startup. ray[client] deprecated; JobSubmissionClient${RESET}
+     ${DIM}now needs ray[default]. Mocks never exercised the real import.${RESET}
+     Fix: updated ${GREEN}api/pyproject.toml${RESET} and ${GREEN}api/Dockerfile${RESET} to ray[default].
+
+  ${BOLD}4. UID mismatch between API and Ray workers${RESET}
+     ${DIM}API runs as UID 10001, Ray runs as UID 1000. hostPath ignores fsGroup.${RESET}
+     ${DIM}API-written files were unreadable by workers.${RESET}
+     Fix: ${GREEN}umask 0000${RESET} in the API entrypoint so new files are world-writable.
+     ${DIM}Production fix is an RWX CSI driver (EFS / Azure Files / Filestore) where fsGroup works.${RESET}
+
+  ${BOLD}5. Benchmark NDJSON parser${RESET}
+     ${DIM}scripts/benchmark.py called json.loads on the full results body.${RESET}
+     ${DIM}Failed because results.jsonl is NDJSON (one JSON per line), not one doc.${RESET}
+     Fix: split on lines, json.loads each line.
+
+${MAGENTA}The takeaway:${RESET} these turn "I built it" into "I ran it."
+EOF
+pause
+
+# ============================================================================
+# PRODUCTION PATH  -  prioritized next steps  (slide 8 equivalent)
+# ============================================================================
+echo
+hr
+printf "${BLUE}  PRODUCTION PATH  -  prioritized changes for a real rollout${RESET}\n"
+hr
+echo
+cat <<EOF
+${DIM}If I had to take this to production tomorrow, five things, in this order.${RESET}
+
+  ${BOLD}1. Turn on autoscaling${RESET}                      ${DIM}biggest leverage, zero code${RESET}
+     ${GREEN}enableInTreeAutoscaling: true${RESET} on the RayCluster.
+     Set a min/max worker range.
+     One YAML flag, cluster absorbs bursty traffic.
+
+  ${BOLD}2. GPU workers + batched generate${RESET}           ${DIM}10-20x throughput before vLLM${RESET}
+     Swap worker image to ${GREEN}rayproject/ray:2.54.1-py310-gpu${RESET}.
+     Replace the per-prompt loop in QwenPredictor.__call__ with
+     left-padded batched generate(). vLLM is stage 2.
+
+  ${BOLD}3. Object storage instead of the PVC${RESET}       ${DIM}kills RWX problem on every cloud${RESET}
+     ${GREEN}fsspec${RESET} + S3 / GCS / Azure Blob.
+     Ray Data reads s3:// natively. Workers scale horizontally without
+     depending on a shared filesystem.
+
+  ${BOLD}4. Real auth${RESET}                                ${DIM}multi-tenant ready${RESET}
+     Static API key becomes ${GREEN}JWTs${RESET} with per-tenant quotas.
+     External Secrets Operator pulling from KMS or Vault.
+
+  ${BOLD}5. Alertmanager + Loki${RESET}                     ${DIM}closes the observability loop${RESET}
+     /metrics is already there (you just saw it). Scrape with Prometheus.
+     Loki for the JSON logs, tied to X-Request-ID.
+     Both deliberately out of scope for the exercise.
+
+${BOLD}What does NOT change:${RESET}  FastAPI routes, Postgres schema, batch lifecycle, NDJSON contract.
+${MAGENTA}That is the control-plane / compute-plane split paying off.${RESET}
+EOF
+pause
 
 # ============================================================================
 # FINAL SUMMARY DASHBOARD
