@@ -250,7 +250,7 @@ narrate \
     "write_inputs_jsonl writes /data/batches/<id>/input.jsonl to the PVC," \
     "(d) INSERT into Postgres with status=queued, (e) JobSubmissionClient" \
     "submits a Ray job over the Jobs REST API on port 8265. Then it returns" \
-    "202 Accepted. No inference happens yet."
+    "200 OK. No inference has happened yet."
 
 cmd "curl -X POST $HOST/v1/batches -H 'X-API-Key: ...' -d '{...}'"
 echo
@@ -274,7 +274,7 @@ TOTAL_PROMPTS=$(echo "$RESPONSE" | jq -r '.request_counts.total')
 [ "$BATCH" != "null" ] && [ -n "$BATCH" ] || fail "Could not extract batch id"
 
 echo
-watchfor "status=queued in the response. Submit latency around 100-200 ms."
+watchfor "status=queued in the response"
 verify "POST returned in ${SUBMIT_LATENCY_MS} ms with status=queued"
 verify "Batch id captured: ${BOLD}$BATCH${RESET}"
 verify "$TOTAL_PROMPTS prompts now queued for processing"
@@ -292,18 +292,19 @@ narrate \
     "action. The API does not depend on Ray being reachable to answer" \
     "GET /v1/batches/<id>."
 
-PG_POD=$(kubectl get pods -n "$NAMESPACE" -l app=postgres -o name 2>/dev/null | head -1 | sed 's|pod/||')
+PG_POD=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=postgres -o name 2>/dev/null | head -1 | sed 's|pod/||')
 if [ -n "$PG_POD" ]; then
-    cmd "kubectl exec $PG_POD -- psql -U postgres -d batchapi -c 'SELECT ...'"
+    # Credentials come from the postgres secret: POSTGRES_USER=batches, POSTGRES_DB=batches
+    cmd "kubectl exec $PG_POD -- psql -U batches -d batches -c 'SELECT ...'"
     echo
-    kubectl exec -n "$NAMESPACE" "$PG_POD" -- psql -U postgres -d batchapi -c \
+    kubectl exec -n "$NAMESPACE" "$PG_POD" -- psql -U batches -d batches -c \
         "SELECT id, status, model, input_count, completed_count, failed_count, ray_job_id, created_at FROM batches WHERE id = '$BATCH';" \
-        2>/dev/null || warn "Could not query Postgres - check db name / credentials"
+        2>&1 | sed '/^$/d' || warn "Could not query Postgres (check user/db/labels)"
     echo
     watchfor "status='queued', ray_job_id is not null, counts are 0/0"
-    verify "Postgres row exists with ray_job_id and counts=0"
+    verify "Postgres row exists with ray_job_id populated"
 else
-    warn "No postgres pod found, skipping"
+    warn "No postgres pod found (label app.kubernetes.io/name=postgres), skipping"
 fi
 pause
 fi
@@ -346,7 +347,7 @@ while :; do
         echo "${CYAN}[${elapsed}s]${RESET} status -> ${BOLD}${status}${RESET}  (completed=${completed} failed=${failed})"
         case "$status" in
           queued)      echo "${DIM}        Ray has the job. Worker not yet scheduled or actor still warming up.${RESET}" ;;
-          in_progress) echo "${DIM}        Worker is now generating. Each prompt is roughly 60s on CPU.${RESET}" ;;
+          in_progress) echo "${DIM}        Worker is now generating. CPU inference takes many seconds per prompt.${RESET}" ;;
           completed)   echo "${DIM}        Worker wrote results.jsonl and _SUCCESS. Poller saw the marker.${RESET}" ;;
         esac
         last_status="$status"
@@ -606,7 +607,7 @@ echo
 cat <<EOF
 ${BOLD}Run summary${RESET}
 
-  ${C_API}Submit latency${RESET}        ${SUBMIT_LATENCY_MS} ms       ${DIM}(client -> 202)${RESET}
+  ${C_API}Submit latency${RESET}        ${SUBMIT_LATENCY_MS} ms       ${DIM}(client -> 200 OK with BatchObject body)${RESET}
   ${C_RAY}Inference duration${RESET}    ${INFER_DURATION_S} s         ${DIM}(queued -> completed)${RESET}
   ${C_PVC}Input size${RESET}            ${INPUT_BYTES} bytes
   ${C_PVC}Results size${RESET}          ${RESULTS_BYTES} bytes
