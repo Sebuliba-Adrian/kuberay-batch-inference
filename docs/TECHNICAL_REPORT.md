@@ -147,7 +147,8 @@ The trade-off is up to N seconds of staleness. For a batch workload where jobs t
 | **E2E - happy path**     | pytest + full app lifespan   | 2     | POST → poll → GET status → GET results, 2 concurrent batches |
 | **E2E - failure paths**  | pytest + full app lifespan   | 6     | Ray down, worker crash, /health still 200, /ready 503 |
 | Unit - lifespan          | pytest                       | 3     | Boot sequence + shutdown helper |
-| **TOTAL**                |                              | **169** | **100% line + 100% branch on 464 statements, 78 branches** |
+| Unit - observability     | pytest + httpx.ASGITransport | 12    | /metrics text format, counter increments, RequestIdMiddleware + X-Request-ID, route-template cardinality fix |
+| **TOTAL**                |                              | **181** | **100% line + 100% branch on 532 statements, 82 branches** |
 
 ### 3.2 What the E2E tests actually prove
 
@@ -205,7 +206,7 @@ The full stack has been brought up on a real (local) KubeRay cluster and the exa
 3. **`fix(api): ray[client] → ray[default] for JobSubmissionClient dashboard extras`** - `JobSubmissionClient` needs the `ray[default]` package extras, not the deprecated `ray[client]` variant. The API pod crash-looped at startup with an `ImportError` that the mocked unit tests could not catch because they monkeypatch `ray.job_submission` via `set_client_factory` and never exercise the real import path. Updated both `api/pyproject.toml` and `api/Dockerfile`.
 4. **`fix(k8s): umask 0000 on batch-api so API and Ray workers share hostPath PVC`** - API pod runs as UID 10001 (baked into `api/Dockerfile`), Ray worker pods run as UID 1000 (the `ray` user in `rayproject/ray` base image). `hostPath` volumes ignore `fsGroup`, so batch subdirectories created by the API (default `0755`) were unreadable by Ray workers. Wrapping `uvicorn` with `umask 0000` makes new directories world-writable. Production fix is a real `ReadWriteMany` CSI driver (EFS / Azure Files / Filestore) where `fsGroup` works - documented in `docs/ARCHITECTURE.md §2.5`.
 
-**Three additional cross-platform coverage gaps** were surfaced when the CI suite ran on `ubuntu-22.04` / python 3.11 for the first time after those runtime fixes landed - coverage.py traces a few sync-after-await patterns differently on Linux 3.11 vs Windows 3.12. One is a documented tracer blind spot (`# pragma: no cover` with a comment explaining the reason); the other two were closed by splitting a compound `if` condition into explicit early returns and adding a test that forces `CancelledError` to propagate from inside the poller's `try` block via a monkeypatched slow sweep. Full suite is 169 cases, 100% line and branch on both platforms.
+**Three additional cross-platform coverage gaps** were surfaced when the CI suite ran on `ubuntu-22.04` / python 3.11 for the first time after those runtime fixes landed - coverage.py traces a few sync-after-await patterns differently on Linux 3.11 vs Windows 3.12. One is a documented tracer blind spot (`# pragma: no cover` with a comment explaining the reason); the other two were closed by splitting a compound `if` condition into explicit early returns and adding a test that forces `CancelledError` to propagate from inside the poller's `try` block via a monkeypatched slow sweep. Full suite is 181 cases, 100% line and branch on both platforms (includes 12 observability tests added with `api/src/observability.py`).
 
 #### 3.5.1 Post-observability re-verification on WSL2 (2026-04-13)
 
