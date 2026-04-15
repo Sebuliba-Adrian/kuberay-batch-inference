@@ -352,7 +352,7 @@ while :; do
     elapsed=$(( $(date +%s) - poll_t0 ))
 
     if [ "$status" != "$last_status" ]; then
-        printf "\r"  # clear spinner line
+        printf "\r\033[K"  # clear spinner line to end-of-line (fixes leftover chars from the longer spinner text)
         echo "${CYAN}[${elapsed}s]${RESET} status -> ${BOLD}${status}${RESET}  (completed=${completed} failed=${failed})"
         case "$status" in
           queued)      echo "${DIM}        Ray has the job. Worker not yet scheduled or actor still warming up.${RESET}" ;;
