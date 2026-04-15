@@ -513,49 +513,9 @@ pause
 fi
 
 # ============================================================================
-# BUG LOG  -  5 real bugs caught on a live bring-up  (slide 7 equivalent)
-# ============================================================================
-echo
-hr
-printf "${BLUE}  BUG LOG  -  5 real bugs from the WSL bring-up${RESET}\n"
-hr
-echo
-cat <<EOF
-${DIM}Each of these was caught by running the stack on real hardware.${DIM}
-${DIM}Mocks passed; production would have broken. Five fixes, five PRs.${RESET}
-
-  ${BOLD}1. kind hostPath  Errno 13 on first POST${RESET}
-     ${DIM}First POST returned 500. kind extraMounts target is 0755 root-root;${RESET}
-     ${DIM}non-root pod could not write there.${RESET}
-     Fix: ${GREEN}docker exec <cluster>-control-plane chmod -R 0777 /mnt/data${RESET} in the Makefile.
-
-  ${BOLD}2. Prometheus cardinality explosion${RESET}
-     ${DIM}http_requests_total was labelled by request.url.path (literal batch ULID).${RESET}
-     ${DIM}Would have created a unique time-series per submitted batch.${RESET}
-     Fix: ${GREEN}request.scope["route"].path${RESET} (the matched route template).  Verified live in step 6.
-
-  ${BOLD}3. ray[client] vs ray[default] extras${RESET}
-     ${DIM}API pod crash-looped at startup. ray[client] deprecated; JobSubmissionClient${RESET}
-     ${DIM}now needs ray[default]. Mocks never exercised the real import.${RESET}
-     Fix: updated ${GREEN}api/pyproject.toml${RESET} and ${GREEN}api/Dockerfile${RESET} to ray[default].
-
-  ${BOLD}4. UID mismatch between API and Ray workers${RESET}
-     ${DIM}API runs as UID 10001, Ray runs as UID 1000. hostPath ignores fsGroup.${RESET}
-     ${DIM}API-written files were unreadable by workers.${RESET}
-     Fix: ${GREEN}umask 0000${RESET} in the API entrypoint so new files are world-writable.
-     ${DIM}Production fix is an RWX CSI driver (EFS / Azure Files / Filestore) where fsGroup works.${RESET}
-
-  ${BOLD}5. Benchmark NDJSON parser${RESET}
-     ${DIM}scripts/benchmark.py called json.loads on the full results body.${RESET}
-     ${DIM}Failed because results.jsonl is NDJSON (one JSON per line), not one doc.${RESET}
-     Fix: split on lines, json.loads each line.
-
-${MAGENTA}The takeaway:${RESET} these turn "I built it" into "I ran it."
-EOF
-pause
-
-# ============================================================================
-# PRODUCTION PATH  -  prioritized next steps  (slide 8 equivalent)
+# PRODUCTION PATH  -  prioritized next steps
+#   (Note: the 5-bug log from the WSL bring-up is held in reserve for Q&A,
+#    not delivered as a block. See PROJECT_MONOLITH.md §16 for the full list.)
 # ============================================================================
 echo
 hr
